@@ -1,0 +1,9 @@
+{
+  "name": "bash-marketplace",
+  "description": "SkinnyDragon1's Claude Code plugins.",
+  "owner": {
+    "name": "SkinnyDragon1",
+    "url": "https://github.com/SkinnyDragon1"
+  },
+  "plugins": []
+}
