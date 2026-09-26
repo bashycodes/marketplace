@@ -5,5 +5,18 @@
     "name": "bashycodes",
     "url": "https://github.com/bashycodes"
   },
-  "plugins": []
+  "plugins": [
+    {
+      "name": "claude-bells",
+      "source": "./plugins/claude-bells",
+      "description": "😴/🔔 badge on the tmux tab + terminal bell when a Claude Code session needs you; silent while you watch.",
+      "version": "1.0.0",
+      "category": "productivity",
+      "keywords": [
+        "tmux",
+        "notifications",
+        "bell"
+      ]
+    }
+  ]
 }
