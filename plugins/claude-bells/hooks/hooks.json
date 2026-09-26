@@ -1,0 +1,22 @@
+{
+  "description": "Mark the tmux window and ring the bell when Claude needs you; clear it once Claude is working again.",
+  "hooks": {
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/notify-tmux.sh\" alert stop", "timeout": 5 }] }
+    ],
+    "Notification": [
+      { "matcher": "permission_prompt|elicitation_dialog",
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/notify-tmux.sh\" alert perm", "timeout": 5 }] }
+    ],
+    "PreToolUse": [
+      { "matcher": "AskUserQuestion",
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/notify-tmux.sh\" alert ask", "timeout": 5 }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/notify-tmux.sh\" clear", "timeout": 5 }] }
+    ],
+    "PostToolUse": [
+      { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/notify-tmux.sh\" clear", "timeout": 5 }] }
+    ]
+  }
+}
