@@ -1,0 +1,91 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { fakeFetch, ok } from '../helpers/fake-fetch.mjs';
+import { fakeClock } from '../helpers/fake-clock.mjs';
+import { fixture, body } from '../helpers/fixtures.mjs';
+import { createLogger } from '../../plugins/grill-over-ticktick/lib/log.mjs';
+import { createApi, backoffMs, RETRY_STATUSES } from '../../plugins/grill-over-ticktick/lib/api.mjs';
+
+const TOKEN = '0123456789abcdef-deliberately-wrong'; // the exact string the 401 fixture echoes
+/** @param {import('../helpers/fake-fetch.mjs').Route[]} routes */
+function make(routes) {
+  const f = fakeFetch(routes); const clock = fakeClock();
+  /** @type {string[]} */ const lines = [];
+  const log = createLogger({ stderr: /** @type {any} */ ({ write: (/** @type {string} */ s) => { lines.push(s); return true; } }), secrets: [TOKEN] });
+  const api = createApi({ fetch: f, token: TOKEN, log, sleep: clock.sleep, random: () => 0.5 });
+  return { api, f, clock, lines };
+}
+
+test('sends bearer + json headers, joins base url, parses json', async () => {
+  const { api, f } = make([{ method: 'GET', path: '/project', reply: ok(body('01_get_project')) }]);
+  const r = await api.get('/project');
+  assert.equal(r[0].name, '👋Welcome');
+  assert.equal(f.calls[0].headers.authorization, `Bearer ${TOKEN}`);
+  assert.equal(f.calls[0].path, '/project');
+});
+
+test('post sends json body; empty body → null', async () => {
+  const { api, f } = make([{ method: 'POST', path: /\/complete$/, reply: { status: 200, text: '' } }]);
+  assert.equal(await api.post('/project/p/task/t/complete'), null);
+  assert.equal(f.calls[0].headers['content-type'], 'application/json');
+});
+
+test('401 never leaks the token: exit 5, fixed message, no token in message or log', async () => {
+  const fx = fixture('01_wrong_token_401');
+  const { api, lines } = make([{ method: 'GET', path: '/project', reply: { status: 401, json: fx.response.body } }]);
+  await assert.rejects(api.get('/project'), (/** @type {any} */ e) => {
+    assert.equal(e.exitCode, 5);
+    assert.equal(e.message, 'token rejected by TickTick (run: tt-grill auth)');
+    assert.ok(!JSON.stringify({ m: e.message, x: e.extra }).includes(TOKEN));
+    return true;
+  });
+  assert.ok(!lines.join('').includes(TOKEN));
+});
+
+test('404 → not found exit 6 with errorCode', async () => {
+  const { api } = make([{ method: 'GET', path: /task/, reply: { status: 404, json: body('05_get_task_wrong_project_inbox') } }]);
+  await assert.rejects(api.get('/project/inbox/task/x'), (/** @type {any} */ e) => e.exitCode === 6 && e.extra.errorCode === 'resource_not_found');
+});
+
+test('500 with errorCode → exit 1, no retry, errorCode surfaced', async () => {
+  const { api, f, clock } = make([{ method: 'POST', path: /task/, reply: { status: 500, json: body('14_content_1MB_probe') } }]);
+  await assert.rejects(api.post('/task/x', {}), (/** @type {any} */ e) => e.exitCode === 1 && e.extra.errorCode === 'app_runtime' && /task is too long/.test(e.message));
+  assert.equal(f.calls.length, 1); assert.deepEqual(clock.sleeps, []);
+});
+
+test('retries 503 then succeeds; backoff 500ms ×2 with ±25% jitter capped at 8s', async () => {
+  const { api, f, clock } = make([{ method: 'GET', path: '/project', reply: [{ status: 503, text: 'busy' }, { status: 502, text: '' }, ok([])] }]);
+  assert.deepEqual(await api.get('/project'), []);
+  assert.equal(f.calls.length, 3);
+  assert.deepEqual(clock.sleeps, [500, 1000]); // random()=0.5 → jitter factor 1.0
+});
+
+test('gives up after 5 attempts on retryable status → exit 1', async () => {
+  const { api, f, clock } = make([{ method: 'GET', path: '/project', reply: { status: 429, text: '' } }]);
+  await assert.rejects(api.get('/project'), (/** @type {any} */ e) => e.exitCode === 1 && /gave up after 5 attempts: 429/.test(e.message));
+  assert.equal(f.calls.length, 5); assert.deepEqual(clock.sleeps, [500, 1000, 2000, 4000]);
+});
+
+test('network errors retry and are redacted', async () => {
+  const boom = new TypeError(`fetch failed for ${TOKEN}`);
+  const { api, f } = make([{ method: 'GET', path: '/project', reply: [boom, ok([1])] }]);
+  assert.deepEqual(await api.get('/project'), [1]);
+  assert.equal(f.calls.length, 2);
+  const { api: api2 } = make([{ method: 'GET', path: '/project', reply: boom }]);
+  await assert.rejects(api2.get('/project'), (/** @type {any} */ e) => e.exitCode === 1 && !e.message.includes(TOKEN) && /network error after 5 attempts/.test(e.message));
+});
+
+test('400 is not retried', async () => {
+  const { api, f } = make([{ method: 'POST', path: '/task', reply: { status: 400, json: { errorCode: 'bad' } } }]);
+  await assert.rejects(api.post('/task', {}), (/** @type {any} */ e) => e.exitCode === 1 && e.extra.status === 400);
+  assert.equal(f.calls.length, 1);
+});
+
+test('backoffMs table', () => {
+  assert.equal(backoffMs(1, () => 0.5), 500);
+  assert.equal(backoffMs(4, () => 0.5), 4000);
+  assert.equal(backoffMs(6, () => 0.5), 8000);      // cap
+  assert.equal(backoffMs(1, () => 0), 375);          // −25 %
+  assert.equal(backoffMs(1, () => 1), 625);          // +25 %
+  assert.deepEqual([...RETRY_STATUSES].sort(), [429, 502, 503, 504]);
+});
