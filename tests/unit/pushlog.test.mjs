@@ -20,13 +20,13 @@ test('creating then created; load distinguishes both; file format exact', async 
   const log = createPushlog({ dir, listId: 'L1' });
   await log.creating('r1.1'); await log.created('r1.1', 'T1'); await log.creating('r1.2');
   assert.equal(readFileSync(join(dir, 'L1.log'), 'utf8'), 'creating r1.1\nr1.1 T1\ncreating r1.2\n');
-  assert.deepEqual(await log.load(), new Map([['r1.1', { taskId: 'T1' }], ['r1.2', { taskId: null }]]));
+  assert.deepEqual(await log.load(), new Map([['r1.1', { taskId: 'T1', ingested: false }], ['r1.2', { taskId: null, ingested: false }]]));
 });
 
 test('re-open reads the same file; lists are isolated', async (t) => {
   const dir = tmpDir(t);
   await createPushlog({ dir, listId: 'A' }).created('r1.1', 'TA');
-  assert.deepEqual(await createPushlog({ dir, listId: 'A' }).load(), new Map([['r1.1', { taskId: 'TA' }]]));
+  assert.deepEqual(await createPushlog({ dir, listId: 'A' }).load(), new Map([['r1.1', { taskId: 'TA', ingested: false }]]));
   assert.deepEqual(await createPushlog({ dir, listId: 'B' }).load(), new Map());
 });
 
@@ -34,7 +34,28 @@ test('load ignores a truncated last line and malformed lines', async (t) => {
   const dir = tmpDir(t);
   writeFileSync(join(dir, 'L1.log'), 'creating r1.1\nr1.1 T1\ngarbage line here\ncreating r1.2\nr1.2 T1', 'utf8');
   const log = createPushlog({ dir, listId: 'L1' });
-  assert.deepEqual(await log.load(), new Map([['r1.1', { taskId: 'T1' }], ['r1.2', { taskId: null }]]));
+  assert.deepEqual(await log.load(), new Map([['r1.1', { taskId: 'T1', ingested: false }], ['r1.2', { taskId: null, ingested: false }]]));
+});
+
+test('ingested line: exact format, marks the key, survives later lines, keeps taskId', async (t) => {
+  const dir = tmpDir(t);
+  const log = createPushlog({ dir, listId: 'L1' });
+  await log.creating('r1.1'); await log.created('r1.1', 'T1'); await log.ingested('r1.1'); await log.creating('r1.1');
+  assert.equal(readFileSync(join(dir, 'L1.log'), 'utf8'), 'creating r1.1\nr1.1 T1\ningested r1.1\ncreating r1.1\n');
+  assert.deepEqual(await log.load(), new Map([['r1.1', { taskId: 'T1', ingested: true }]]));
+  await assert.rejects(log.ingested('bogus'), (/** @type {any} */ e) => e.exitCode === 2);
+});
+
+test('ingested before a created line is kept; ingested of an unknown key is recorded', async (t) => {
+  const dir = tmpDir(t);
+  writeFileSync(join(dir, 'L1.log'), 'ingested r1.1\nr1.1 T1\ningested r1.2\n', 'utf8');
+  assert.deepEqual(await createPushlog({ dir, listId: 'L1' }).load(), new Map([['r1.1', { taskId: 'T1', ingested: true }], ['r1.2', { taskId: null, ingested: true }]]));
+});
+
+test('load ignores a truncated ingested line and malformed ingested lines', async (t) => {
+  const dir = tmpDir(t);
+  writeFileSync(join(dir, 'L1.log'), 'r1.1 T1\ningested x1\ningested r1.1 extra\ningested\nr1.2 T2\ningested r1.2', 'utf8');
+  assert.deepEqual(await createPushlog({ dir, listId: 'L1' }).load(), new Map([['r1.1', { taskId: 'T1', ingested: false }], ['r1.2', { taskId: 'T2', ingested: false }]]));
 });
 
 test('load rethrows non-ENOENT read errors as a pushlog_read TtError', async () => {

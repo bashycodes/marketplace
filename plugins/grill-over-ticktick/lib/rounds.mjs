@@ -12,7 +12,8 @@ import { usage, notFound, takenOver } from './errors.mjs';
 /** @typedef {{ effort: string, round: number, host: import('./state.mjs').HostProse, questions: Question[] }} Round */
 /** @typedef {'none'|'tick'|'text'|'tick+text'|'other-only'|'done'|'wontdo'|'missing'} Signal */
 /** @typedef {ReturnType<typeof classifyItems>} Items */
-/** @typedef {{ key: string, taskId: string, etag: string | null, status: number | null, title: string | null, items: Items, desc: string | null, descChanged: boolean, answerText: string | null, signal: Signal }} PulledQuestion */
+/** @typedef {{ key: string, taskId: string, etag: string | null, status: number | null, title: string | null, items: Items, desc: string | null, descChanged: boolean, answerText: string | null, signal: Signal, ingested: boolean }} PulledQuestion */
+/* `ingested`: the pushlog has an `ingested <key>` line, i.e. a previous `close` set this question to answered (2) or won't-do (−1). False when unknown. */
 /** @typedef {{ host: { id: string, etag: string | null, owner: string | null, gen: number, round: number, body: string, prose: string }, questions: PulledQuestion[], truncated: boolean }} PullResult */
 /** @typedef {{ api: Api, effort: string, pushlogDir: string, log: Logger, random?: () => number, layout?: Layout }} Ctx */
 
@@ -150,13 +151,13 @@ async function fetchQuestions(ctx, layout) {
     if (!key) { ctx.log.debug(`ignoring unkeyed task ${t.id}`); continue; }
     const items = classifyItems(t.items);
     const descChanged = parsed.changed || parsed.key !== key;
-    const q = { key, taskId: t.id, etag: t.etag ?? null, status: t.status ?? 0, title: t.title ?? null, items, desc: t.desc ?? null, descChanged, answerText: parsed.answerText, signal: signalFor({ status: t.status ?? 0, items, descChanged }) };
+    const q = { key, taskId: t.id, etag: t.etag ?? null, status: t.status ?? 0, title: t.title ?? null, items, desc: t.desc ?? null, descChanged, answerText: parsed.answerText, signal: signalFor({ status: t.status ?? 0, items, descChanged }), ingested: entries.get(key)?.ingested ?? false };
     const prev = byKey.get(key);
     if (prev) { ctx.log.warn(`duplicate question ${key}: ${prev.taskId} and ${t.id}`); if (entries.get(key)?.taskId !== t.id) continue; }
     byKey.set(key, q);
   }
   for (const [key, e] of entries) {
-    if (e.taskId && !byKey.has(key)) byKey.set(key, { key, taskId: e.taskId, etag: null, status: null, title: null, items: [], desc: null, descChanged: false, answerText: null, signal: 'missing' });
+    if (e.taskId && !byKey.has(key)) byKey.set(key, { key, taskId: e.taskId, etag: null, status: null, title: null, items: [], desc: null, descChanged: false, answerText: null, signal: 'missing', ingested: e.ingested });
   }
   const questions = [...byKey.values()].sort((a, b) => compareKeys(a.key, b.key));
   return { questions, truncated: tasks.length >= FILTER_CAP };
@@ -258,12 +259,16 @@ export async function close(args) {
   const { questions } = await fetchQuestions(args, layout);
   const byKey = new Map(questions.filter((q) => q.signal !== 'missing').map((q) => [q.key, q]));
   const out = { closed: /** @type {string[]} */ ([]), wontdo: /** @type {string[]} */ ([]), reopened: /** @type {string[]} */ ([]), skipped: /** @type {string[]} */ ([]) };
+  const pushlog = createPushlog({ dir: args.pushlogDir, listId: layout.listId });
   /** @param {string[]} keys @param {number} status @param {string[]} into */
   const apply = async (keys, status, into) => {
     for (const key of keys) {
       const q = byKey.get(key);
       if (!q) { out.skipped.push(key); continue; }
       await args.api.post(`/task/${q.taskId}`, { id: q.taskId, projectId: layout.listId, status });
+      // Answered / won't-do means the skill has consumed this question; later pulls flag it so
+      // `wait` does not count it as a fresh answer. Reopen is not a consumption.
+      if (status !== 0) await pushlog.ingested(key);
       into.push(key);
     }
   };

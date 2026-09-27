@@ -172,6 +172,7 @@ test('full flow: takeover → push → pull → close → finish; pull of unknow
   assert.equal(r.json.questions[0].signal, 'tick'); assert.equal(r.json.host.owner, owner); assert.equal(r.json.truncated, false);
   r = await run(['efforts']); assert.deepEqual(r.json.map((/** @type {any} */ e) => [e.effort, e.open, e.answered]), [['e', 0, 1]]);
   r = await run(['close', '--effort', 'e', '--owner', owner], JSON.stringify({ answered: ['r1.1'] })); assert.equal(r.code, 0); assert.deepEqual(r.json.closed, ['r1.1']);
+  r = await run(['pull', '--effort', 'e']); assert.equal(r.code, 0); assert.equal(r.json.questions[0].ingested, true);
   r = await run(['finish', '--effort', 'e']); assert.equal(r.code, 0); assert.equal(r.json.archived, true); assert.equal(r.json.decisions[0].ticked[0], 'b');
   r = await run(['pull', '--effort', 'e']); assert.equal(r.code, 6); assert.equal(r.out, ''); // archived lists are not efforts any more
 });
@@ -184,6 +185,11 @@ test('wait: answered → exit 0 reason all; takeover mid-wait → 3; --max → 4
   r = await run(['wait', '--effort', 'e', '--owner', owner, '--every', '1s', '--settle', '5s', '--grace', '1s', '--max', '1m']);
   assert.equal(r.code, 0); assert.equal(r.json.reason, 'all'); assert.equal(r.json.questions[0].signal, 'tick');
   assert.deepEqual(clock.sleeps.slice(-2), [1000, 1000]);
+  r = await run(['close', '--effort', 'e', '--owner', owner], JSON.stringify({ answered: ['r1.1'] })); assert.equal(r.code, 0);
+  const ROUND2 = { ...ROUND, round: 2, host: { ...ROUND.host, open: ['r2.1 q2 — ⭐ a'] }, questions: [{ ...ROUND.questions[0], key: 'r2.1', title: 'q2?' }] };
+  r = await run(['push', '--effort', 'e', '--owner', owner], JSON.stringify(ROUND2)); assert.equal(r.code, 0);
+  r = await run(['wait', '--effort', 'e', '--owner', owner, '--every', '1s', '--settle', '1s', '--grace', '1s', '--max', '3s']); assert.equal(r.code, 4); assert.equal(r.out, ''); // r1.1 answered+closed is not a round-2 answer
+  assert.deepEqual([r.ejson.answered, r.ejson.total], [0, 1]);
   tt.tick(taskId, '⭐ a', false);
   setRandom(0.9); // a different owner than `owner` — newOwner() is a pure function of random()
   r = await run(['takeover', '--effort', 'e']);

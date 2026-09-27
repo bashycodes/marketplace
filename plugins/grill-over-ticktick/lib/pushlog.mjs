@@ -1,12 +1,13 @@
 import * as nodeFs from 'node:fs/promises';
 import { join } from 'node:path';
-import { TtError, EXIT } from './errors.mjs';
+import { TtError, EXIT, usage } from './errors.mjs';
 
 const KEY_RE = /^r\d+\.\d+$/;
 const TASK_ID_RE = /^[A-Za-z0-9_-]+$/;
 
 /** @typedef {Pick<typeof nodeFs, 'mkdir' | 'appendFile' | 'readFile'>} LogFs */
-/** @typedef {{ path: string, creating: (key: string) => Promise<void>, created: (key: string, taskId: string) => Promise<void>, load: () => Promise<Map<string, { taskId: string | null }>> }} Pushlog */
+/** @typedef {{ taskId: string | null, ingested: boolean }} PushlogEntry */
+/** @typedef {{ path: string, creating: (key: string) => Promise<void>, created: (key: string, taskId: string) => Promise<void>, ingested: (key: string) => Promise<void>, load: () => Promise<Map<string, PushlogEntry>> }} Pushlog */
 
 /**
  * @param {NodeJS.ProcessEnv | Record<string, string | undefined>} env
@@ -31,6 +32,11 @@ export function createPushlog({ dir, listId, fs = nodeFs }) {
     path,
     creating: (key) => append(`creating ${key}`),
     created: (key, taskId) => append(`${key} ${taskId}`),
+    // `ingested <key>`: close set this question to 2 / −1 after the skill read its answer.
+    ingested: async (key) => {
+      if (!KEY_RE.test(key)) throw usage(`pushlog: bad key "${key}"`);
+      await append(`ingested ${key}`);
+    },
     async load() {
       /** @type {string} */
       let text = '';
@@ -44,15 +50,16 @@ export function createPushlog({ dir, listId, fs = nodeFs }) {
       }
       const rawLines = text.split('\n');
       if (!text.endsWith('\n') && rawLines.length) rawLines.pop();
-      /** @type {Map<string, { taskId: string | null }>} */
+      /** @type {Map<string, PushlogEntry>} */
       const map = new Map();
       for (const raw of rawLines) {
         const line = raw.trim(); if (!line) continue;
         const parts = line.split(/\s+/);
         if (parts.length !== 2) continue;
         const [a, b] = parts;
-        if (a === 'creating' && KEY_RE.test(b)) { if (!map.has(b)) map.set(b, { taskId: null }); }
-        else if (KEY_RE.test(a) && TASK_ID_RE.test(b)) map.set(a, { taskId: b });
+        if (a === 'creating' && KEY_RE.test(b)) { if (!map.has(b)) map.set(b, { taskId: null, ingested: false }); }
+        else if (a === 'ingested' && KEY_RE.test(b)) { const e = map.get(b); if (e) e.ingested = true; else map.set(b, { taskId: null, ingested: true }); }
+        else if (KEY_RE.test(a) && TASK_ID_RE.test(b)) map.set(a, { taskId: b, ingested: map.get(a)?.ingested ?? false });
       }
       return map;
     },

@@ -14,9 +14,17 @@ export function parseDuration(s) {
   return Number(m[1]) * UNITS[/** @type {keyof typeof UNITS} */ (m[2])];
 }
 
+/**
+ * The questions `wait` judges: this round's (`r<host.round>.`) that no `close` has consumed yet.
+ * Earlier rounds keep their tick/text signal after being closed, so counting them would settle
+ * every wait from round 2 on without a new answer.
+ * @param {PullResult} r
+ */
+const current = (r) => r.questions.filter((q) => q.key.startsWith(`r${r.host.round}.`) && !q.ingested);
+
 /** @param {PullResult} r @returns {string} */
 export function fingerprint(r) {
-  return r.questions.map((q) => `${q.key}=${q.etag ?? '-'}`).join(',');
+  return current(r).map((q) => `${q.key}=${q.etag ?? '-'}`).join(',');
 }
 
 /**
@@ -34,7 +42,7 @@ export async function wait(o) {
     r = await o.pull(); checkOwner(r);
     const fp2 = fingerprint(r);
     if (fp2 !== fp) { fp = fp2; lastChange = o.now(); o.log.debug(`change seen: ${fp}`); }
-    const qs = r.questions;
+    const qs = current(r);
     if (qs.length > 0 && qs.every((q) => FINAL.has(q.signal))) {
       await o.sleep(o.grace);
       const r2 = await o.pull(); checkOwner(r2);

@@ -290,3 +290,20 @@ test('efforts summarises every open effort', async (t) => {
   assert.deepEqual(r.map((x) => [x.effort, x.owner, x.round, x.open, x.answered]), [['e', owner, 2, 1, 1], ['empty', 'o_zzzzzz', 1, 0, 0]]);
   assert.ok(ANSWERED.has('tick'));
 });
+
+test('close marks answered/wontdo keys ingested in the pushlog (not reopen, not skipped); pull exposes ingested on every question incl. missing', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner, listId } = await takeover(ctx);
+  const big = structuredClone(ROUND);
+  big.questions.push({ key: 'r2.3', title: 't3', context: 'c', rec: { label: 'a', why: 'w' }, options: ['a', 'b'] });
+  const p = await push({ ...ctx, owner, round: big });
+  let r = await pull(ctx);
+  assert.deepEqual(r.questions.map((q) => [q.key, q.ingested]), [['r2.1', false], ['r2.2', false], ['r2.3', false]]);
+  await close({ ...ctx, owner, input: { answered: ['r2.1'], wontdo: ['r2.2'], reopen: ['r2.3'] } });
+  await close({ ...ctx, owner, input: { answered: ['r9.9'] } });
+  const log = readFileSync(join(ctx.pushlogDir, `${listId}.log`), 'utf8');
+  assert.ok(log.endsWith('ingested r2.1\ningested r2.2\n'), log);
+  tt.deleteTask(p.questions[1].taskId);
+  r = await pull(ctx);
+  assert.deepEqual(r.questions.map((q) => [q.key, q.signal, q.ingested]), [['r2.1', 'done', true], ['r2.2', 'missing', true], ['r2.3', 'none', false]]);
+});
