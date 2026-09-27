@@ -41,7 +41,7 @@ test('references exist and round-schema lists every exit code', () => {
 
 test('every eval case has a prompt and at least one grader', () => {
   const evals = join(root, 'evals');
-  for (const c of readdirSync(evals).filter((d) => d !== 'results')) {
+  for (const c of readdirSync(evals, { withFileTypes: true }).filter((d) => d.isDirectory() && d.name !== 'results').map((d) => d.name)) {
     assert.ok(existsSync(join(evals, c, 'prompt.md')), `${c}/prompt.md`);
     assert.ok(readdirSync(join(evals, c, 'graders')).length > 0, `${c}/graders`);
   }

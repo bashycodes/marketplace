@@ -2,6 +2,8 @@
 
 Run once per release against the throwaway TickTick account. Effort name `acc-<date>`.
 
+`tt-grill` is on PATH only inside Claude's Bash tool. In a human terminal use the absolute path (ask Claude to run `command -v tt-grill`, or use `<plugin root>/bin/tt-grill`).
+
 Setup
 - [ ] `/setup-ticktick` walks through auth in the user's own terminal, `auth status` prints `{ok:true,…}`.
 - [ ] The setup test question appears in the smart list "🔥 Grill inbox" on the phone within a minute.
@@ -16,6 +18,7 @@ Round trip
 - [ ] Mark a question won't-do → Claude drops it and notes it in the host prose.
 - [ ] Delete a question → Claude drops it (signal `missing`) and does not re-create it.
 - [ ] Tick two contradicting items → Claude re-asks in the next round with a note.
+- [ ] Second round: `wait` does not return until a round-2 answer arrives (the closed round-1 answers do not end it); no duplicate questions are pushed.
 
 Ownership
 - [ ] While `wait` runs, start `/grill-from-ticktick acc-<date>` in a second session → the first session stops with "taken over"; open questions become won't-do; the grill continues in the terminal.
