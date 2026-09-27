@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
+import { EventEmitter } from 'node:events';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { tmpDir } from '../helpers/tmp.mjs';
 import { fakeTickTick } from '../helpers/fake-ticktick.mjs';
 import { fakeFetch } from '../helpers/fake-fetch.mjs';
@@ -20,15 +22,46 @@ async function harness(t, o = {}) {
   // pure function of random(), so a constant random would otherwise make every takeover in a
   // test collide on the same owner string (verified against rounds.mjs's newOwner directly).
   let randomValue = 0.42;
-  /** @param {string[]} argv @param {string} [input] */
-  const run = async (argv, input) => {
+  /** @param {string[]} argv @param {string | (string | Buffer)[]} [input] @param {{ isTTY?: boolean }} [runOpts] */
+  const run = async (argv, input, runOpts = {}) => {
     let out = '', err = '';
-    const stdin = /** @type {any} */ (Readable.from(input === undefined ? [] : [input])); stdin.isTTY = false;
+    const items = input === undefined ? [] : Array.isArray(input) ? input : [input];
+    const stdin = /** @type {any} */ (Readable.from(items)); stdin.isTTY = runOpts.isTTY ?? false;
     const code = await main(argv, { stdin, stdout: /** @type {any} */ ({ write: (/** @type {string} */ s) => { out += s; return true; } }), stderr: /** @type {any} */ ({ write: (/** @type {string} */ s) => { err += s; return true; } }), env: { XDG_STATE_HOME: home + '/state', ...(o.env ?? {}) }, home, fetch: o.fetch ?? tt.fetch, now: clock.now, sleep: clock.sleep, random: () => randomValue });
     const json = /^[[{]/.test(out.trim()) ? JSON.parse(out) : null; // throws if stdout is not pure JSON (help text is the one non-JSON output)
     return { code, out, err, json, ejson: err.trim() ? JSON.parse(err.trim().split('\n').pop() ?? '') : null };
   };
   return { run, tt, home, clock, setRandom: (/** @type {number} */ v) => { randomValue = v; } };
+}
+
+/** A minimal fake TTY stdin for the `auth` prompt: an EventEmitter shaped like promptHidden wants. */
+function fakeTtyStdin() {
+  const stdin = /** @type {any} */ (new EventEmitter());
+  stdin.isTTY = true;
+  stdin.setRawMode = () => {};
+  stdin.resume = () => {};
+  stdin.pause = () => {};
+  stdin.setEncoding = () => {};
+  return stdin;
+}
+
+/**
+ * Runs `main(['auth'], …)` against a fake TTY, then feeds it TOKEN + Enter once the prompt's
+ * data listener is attached (main runs synchronously up to that `await`, so scheduling the
+ * emit on the next tick is safely after the listener is registered).
+ * @param {{ home: string, fetch: typeof fetch }} o
+ */
+async function runPromptedAuth(o) {
+  let out = '', err = '';
+  const stdin = fakeTtyStdin();
+  const p = main(['auth'], { stdin, stdout: /** @type {any} */ ({ write: (/** @type {string} */ s) => { out += s; return true; } }), stderr: /** @type {any} */ ({ write: (/** @type {string} */ s) => { err += s; return true; } }), env: {}, home: o.home, fetch: o.fetch, now: () => 0, sleep: async () => {}, random: () => 0.42 });
+  process.nextTick(() => stdin.emit('data', TOKEN + '\r'));
+  const code = await p;
+  const json = /^[[{]/.test(out.trim()) ? JSON.parse(out) : null;
+  // On success, stderr holds only the prompt text (no JSON error line) — only try to parse an
+  // error line when the command actually failed.
+  const lastLine = err.trim().split('\n').pop() ?? '';
+  return { code, out, err, json, ejson: code !== 0 && /^[[{]/.test(lastLine) ? JSON.parse(lastLine) : null };
 }
 
 test('usage errors: missing --effort, missing --owner, unknown flag, bad stdin json, tty stdin', async (t) => {
@@ -39,6 +72,54 @@ test('usage errors: missing --effort, missing --owner, unknown flag, bad stdin j
   r = await run(['push', '--effort', 'e', '--owner', 'o'], '{nope'); assert.equal(r.code, 2); assert.match(r.ejson.message, /stdin is not valid JSON/);
   r = await run(['wait', '--effort', 'e', '--owner', 'o', '--every', 'soon']); assert.equal(r.code, 2); assert.match(r.ejson.message, /bad duration/);
   r = await run(['wait', '--effort', 'e', '--owner', 'o', '--every', '0s']); assert.equal(r.code, 2);
+});
+
+test('push with a TTY stdin (no piped input) → usage, exit 2', async (t) => {
+  const { run } = await harness(t);
+  const r = await run(['push', '--effort', 'e', '--owner', 'o'], undefined, { isTTY: true });
+  assert.equal(r.code, 2); assert.equal(r.out, ''); assert.match(r.ejson.message, /push expects JSON on stdin/);
+});
+
+test('unexpected positional arguments are rejected before the token is read', async (t) => {
+  const { run, home } = await harness(t, { token: false });
+  let r = await run(['efforts', 'foo']); assert.equal(r.code, 2); assert.equal(r.out, ''); assert.match(r.ejson.message, /unexpected argument: foo/);
+  r = await run(['auth', 'stauts']); assert.equal(r.code, 2); assert.match(r.ejson.message, /unexpected argument: stauts/);
+  assert.equal(existsSync(`${home}/.config/tt-grill/token`), false); // no prompt, no write
+});
+
+test('unknown command via main() → usage, exit 2', async (t) => {
+  const { run } = await harness(t);
+  const r = await run(['bogus']);
+  assert.equal(r.code, 2); assert.equal(r.out, ''); assert.equal(r.ejson.error, 'usage'); assert.match(r.ejson.message, /unknown command: bogus/);
+});
+
+test('readStdin reassembles a multi-byte UTF-8 character split across chunks', async (t) => {
+  const { run } = await harness(t);
+  let r = await run(['takeover', '--effort', 'e']); const owner = r.json.owner;
+  const buf = Buffer.from(JSON.stringify(ROUND), 'utf8');
+  const cut = buf.indexOf(Buffer.from('⭐')) + 1; // split inside the 3-byte ⭐ sequence
+  r = await run(['push', '--effort', 'e', '--owner', owner], [buf.subarray(0, cut), buf.subarray(cut)]);
+  assert.equal(r.code, 0);
+  r = await run(['pull', '--effort', 'e']);
+  assert.equal(r.code, 0); assert.ok(r.json.host.prose.includes('r1.1 q — ⭐ a'));
+});
+
+test('auth prompt: 401 → exit 5, no token file, token never printed', async (t) => {
+  const home = tmpDir(t);
+  const f = fakeFetch([{ method: 'GET', path: '/project', reply: { status: 401, json: fixture('01_wrong_token_401').response.body } }]);
+  const r = await runPromptedAuth({ home, fetch: f });
+  assert.equal(r.code, 5); assert.equal(r.out, '');
+  assert.ok(!r.out.includes(TOKEN)); assert.ok(!r.err.includes(TOKEN));
+  assert.equal(existsSync(`${home}/.config/tt-grill/token`), false);
+});
+
+test('auth prompt: success → exit 0, {ok, path}, token file written 0600', async (t) => {
+  const home = tmpDir(t);
+  const tt = fakeTickTick();
+  const r = await runPromptedAuth({ home, fetch: tt.fetch });
+  assert.equal(r.code, 0); assert.equal(r.json.ok, true); assert.ok(r.json.path.endsWith('.config/tt-grill/token'));
+  assert.equal(readFileSync(r.json.path, 'utf8'), TOKEN + '\n');
+  assert.equal(statSync(r.json.path).mode & 0o777, 0o600);
 });
 
 test('no token → exit 5 pointing at tt-grill auth; nothing on stdout', async (t) => {
@@ -73,27 +154,26 @@ test('auth without a TTY → exit 2 and no token file written', async (t) => {
   const { run, home } = await harness(t, { token: false });
   const r = await run(['auth']);
   assert.equal(r.code, 2); assert.match(r.ejson.message, /interactive terminal/);
-  const { existsSync } = await import('node:fs');
   assert.equal(existsSync(`${home}/.config/tt-grill/token`), false);
 });
 
 test('full flow: takeover → push → pull → close → finish; pull of unknown effort → 6; owner mismatch → 3', async (t) => {
   const { run, tt } = await harness(t);
-  let r = await run(['pull', '--effort', 'e']); assert.equal(r.code, 6);
+  let r = await run(['pull', '--effort', 'e']); assert.equal(r.code, 6); assert.equal(r.out, '');
   r = await run(['efforts']); assert.equal(r.code, 0); assert.deepEqual(r.json, []);
   r = await run(['takeover', '--effort', 'e']); assert.equal(r.code, 0);
   const owner = r.json.owner; assert.match(owner, /^o_/); assert.equal(r.json.gen, 1); assert.equal(r.json.created, true);
   r = await run(['push', '--effort', 'e', '--owner', owner], JSON.stringify(ROUND)); assert.equal(r.code, 0);
   assert.deepEqual(r.json.questions.map((/** @type {any} */ q) => [q.key, q.created]), [['r1.1', true]]);
   const taskId = r.json.questions[0].taskId;
-  r = await run(['push', '--effort', 'e', '--owner', 'o_other'], JSON.stringify(ROUND)); assert.equal(r.code, 3); assert.equal(r.ejson.error, 'taken_over');
+  r = await run(['push', '--effort', 'e', '--owner', 'o_other'], JSON.stringify(ROUND)); assert.equal(r.code, 3); assert.equal(r.out, ''); assert.equal(r.ejson.error, 'taken_over');
   tt.tick(taskId, 'b');
   r = await run(['pull', '--effort', 'e']); assert.equal(r.code, 0);
   assert.equal(r.json.questions[0].signal, 'tick'); assert.equal(r.json.host.owner, owner); assert.equal(r.json.truncated, false);
   r = await run(['efforts']); assert.deepEqual(r.json.map((/** @type {any} */ e) => [e.effort, e.open, e.answered]), [['e', 0, 1]]);
   r = await run(['close', '--effort', 'e', '--owner', owner], JSON.stringify({ answered: ['r1.1'] })); assert.equal(r.code, 0); assert.deepEqual(r.json.closed, ['r1.1']);
   r = await run(['finish', '--effort', 'e']); assert.equal(r.code, 0); assert.equal(r.json.archived, true); assert.equal(r.json.decisions[0].ticked[0], 'b');
-  r = await run(['pull', '--effort', 'e']); assert.equal(r.code, 6); // archived lists are not efforts any more
+  r = await run(['pull', '--effort', 'e']); assert.equal(r.code, 6); assert.equal(r.out, ''); // archived lists are not efforts any more
 });
 
 test('wait: answered → exit 0 reason all; takeover mid-wait → 3; --max → 4', async (t) => {
@@ -107,8 +187,8 @@ test('wait: answered → exit 0 reason all; takeover mid-wait → 3; --max → 4
   tt.tick(taskId, '⭐ a', false);
   setRandom(0.9); // a different owner than `owner` — newOwner() is a pure function of random()
   r = await run(['takeover', '--effort', 'e']);
-  r = await run(['wait', '--effort', 'e', '--owner', owner, '--every', '1s', '--max', '1m']); assert.equal(r.code, 3);
-  r = await run(['wait', '--effort', 'e', '--owner', r.ejson.owner, '--every', '1s', '--max', '3s']); assert.equal(r.code, 4);
+  r = await run(['wait', '--effort', 'e', '--owner', owner, '--every', '1s', '--max', '1m']); assert.equal(r.code, 3); assert.equal(r.out, '');
+  r = await run(['wait', '--effort', 'e', '--owner', r.ejson.owner, '--every', '1s', '--max', '3s']); assert.equal(r.code, 4); assert.equal(r.out, '');
 });
 
 test('wait polls cost one filter + one host GET each', async (t) => {
@@ -116,7 +196,7 @@ test('wait polls cost one filter + one host GET each', async (t) => {
   let r = await run(['takeover', '--effort', 'e']); const owner = r.json.owner;
   await run(['push', '--effort', 'e', '--owner', owner], JSON.stringify(ROUND));
   const start = tt.calls.length;
-  r = await run(['wait', '--effort', 'e', '--owner', owner, '--every', '1s', '--max', '3s']); assert.equal(r.code, 4);
+  r = await run(['wait', '--effort', 'e', '--owner', owner, '--every', '1s', '--max', '3s']); assert.equal(r.code, 4); assert.equal(r.out, '');
   const polls = tt.calls.slice(start).filter((c) => c.path === '/task/filter').length;
   const gets = tt.calls.slice(start).filter((c) => c.method === 'GET' && /\/task\//.test(c.path)).length;
   assert.equal(polls, 4); assert.equal(gets, 4); // initial + 3 polls

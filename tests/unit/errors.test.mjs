@@ -23,3 +23,8 @@ test('toExit maps TtError with extra, and unknown errors to internal/1, redactin
   assert.deepEqual(u, { exitCode: 1, json: { error: 'internal', message: 'boom [redacted] boom' } });
   assert.equal(toExit('string thrown').json.message, 'string thrown');
 });
+
+test('toExit redacts string values inside extra too, leaving non-strings untouched', () => {
+  assert.equal(toExit(notFound('x', { note: 'tok123' }), ['tok123']).json.note, '[redacted]');
+  assert.deepEqual(toExit(notFound('x', { count: 3, ok: false }), ['tok123']).json, { error: 'not_found', message: 'x', count: 3, ok: false });
+});

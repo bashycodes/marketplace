@@ -40,7 +40,8 @@ export const notFound = (msg, extra) => new TtError('not_found', msg, EXIT.NOT_F
  */
 export function toExit(err, secrets = []) {
   if (err instanceof TtError) {
-    return { exitCode: err.exitCode, json: { error: err.code, message: redact(err.message, secrets), ...err.extra } };
+    const extra = Object.fromEntries(Object.entries(err.extra).map(([k, v]) => [k, typeof v === 'string' ? redact(v, secrets) : v]));
+    return { exitCode: err.exitCode, json: { error: err.code, message: redact(err.message, secrets), ...extra } };
   }
   const message = err instanceof Error ? err.message : String(err);
   return { exitCode: EXIT.ERROR, json: { error: 'internal', message: redact(message, secrets) } };

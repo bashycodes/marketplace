@@ -42,9 +42,13 @@ env: TICKTICK_TOKEN (CI/cloud only), TT_GRILL_DEBUG=1, XDG_STATE_HOME
 
 /** @param {any} stdin @returns {Promise<string>} */
 export async function readStdin(stdin) {
-  let s = '';
-  for await (const chunk of stdin) s += chunk;
-  return s;
+  // Concatenate raw bytes before decoding once — decoding each chunk separately (e.g. via
+  // string concatenation, which coerces a Buffer chunk with its own default utf8 decode) can
+  // split a multi-byte UTF-8 character across a chunk boundary and corrupt it.
+  /** @type {Buffer[]} */
+  const chunks = [];
+  for await (const c of stdin) chunks.push(typeof c === 'string' ? Buffer.from(c, 'utf8') : c);
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 /**
@@ -78,6 +82,13 @@ export async function main(argv, io = {}) {
       parsed = /** @type {any} */ (parseArgs({ args: argv.slice(1), strict: true, allowPositionals: true, options: { effort: { type: 'string' }, owner: { type: 'string' }, every: { type: 'string' }, settle: { type: 'string' }, grace: { type: 'string' }, max: { type: 'string' } } }));
     } catch (e) { throw usage(e instanceof Error ? e.message : String(e)); }
     const { values, positionals } = parsed;
+    // The only positional argument any command accepts is `status`, and only for `auth`.
+    if (cmd === 'auth') {
+      const bad = positionals.find((/** @type {string} */ p, /** @type {number} */ i) => !(i === 0 && p === 'status'));
+      if (bad !== undefined) throw usage(`unexpected argument: ${bad}`);
+    } else if (positionals.length) {
+      throw usage(`unexpected argument: ${positionals[0]}`);
+    }
     const need = (/** @type {'effort' | 'owner'} */ name) => { const v = values[name]; if (!v) throw usage(`--${name} is required for ${cmd}`); return v; };
     const readJson = async () => {
       if (stdin.isTTY) throw usage(`${cmd} expects JSON on stdin`);
