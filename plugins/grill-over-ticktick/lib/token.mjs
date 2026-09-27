@@ -1,6 +1,6 @@
 import * as nodeFs from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { authError, usage, NO_TOKEN_MESSAGE } from './errors.mjs';
+import { authError, usage, NO_TOKEN_MESSAGE, TtError, EXIT } from './errors.mjs';
 
 /** @typedef {Pick<typeof nodeFs, 'mkdir' | 'writeFile' | 'readFile' | 'chmod'>} TokenFs */
 
@@ -15,7 +15,12 @@ export async function readToken({ env, home, fs = nodeFs }) {
   const fromEnv = (env.TICKTICK_TOKEN ?? '').trim();
   if (fromEnv) return fromEnv;
   let raw = '';
-  try { raw = await fs.readFile(tokenPath(home), 'utf8'); } catch { raw = ''; }
+  try {
+    raw = await fs.readFile(tokenPath(home), 'utf8');
+  } catch (/** @type {any} */ err) {
+    if (err && err.code === 'ENOENT') { raw = ''; }
+    else throw new TtError('token_read', `cannot read ${tokenPath(home)}: ${err.code ?? err.message}`, EXIT.ERROR);
+  }
   const tok = raw.trim();
   if (!tok) throw authError(NO_TOKEN_MESSAGE);
   return tok;
@@ -28,6 +33,7 @@ export async function readToken({ env, home, fs = nodeFs }) {
 export async function writeToken({ home, token, fs = nodeFs }) {
   const p = tokenPath(home);
   await fs.mkdir(dirname(p), { recursive: true, mode: 0o700 });
+  await fs.chmod(dirname(p), 0o700);
   await fs.writeFile(p, token.trim() + '\n', { mode: 0o600 });
   await fs.chmod(p, 0o600);
   return p;
@@ -46,7 +52,17 @@ export function promptHidden(stdin, stdout, prompt) {
   }
   return new Promise((resolve, reject) => {
     let buf = '';
-    const cleanup = () => { stdin.setRawMode(false); stdin.pause(); stdin.off('data', onData); };
+    let done = false;
+    const cleanup = () => {
+      if (done) return;
+      done = true;
+      stdin.setRawMode(false);
+      stdin.pause();
+      stdin.off('data', onData);
+      stdin.off('end', onEnd);
+      stdin.off('close', onEnd);
+      stdin.off('error', onError);
+    };
     /** @param {string | Buffer} chunk */
     const onData = (chunk) => {
       for (const c of String(chunk)) {
@@ -56,10 +72,16 @@ export function promptHidden(stdin, stdout, prompt) {
         buf += c;
       }
     };
+    const onEnd = () => { cleanup(); reject(usage('input closed before a token was entered')); };
+    /** @param {Error} err */
+    const onError = (err) => { cleanup(); reject(usage(`input error: ${err.message}`)); };
     stdout.write(prompt);
     stdin.setEncoding('utf8');
     stdin.setRawMode(true);
     stdin.resume();
     stdin.on('data', onData);
+    stdin.on('end', onEnd);
+    stdin.on('close', onEnd);
+    stdin.on('error', onError);
   });
 }
