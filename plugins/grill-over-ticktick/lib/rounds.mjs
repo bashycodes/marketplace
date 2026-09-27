@@ -1,5 +1,5 @@
 import { findLayout, ensureLayout, ensureTag, listEfforts, archiveList, TAG } from './layout.mjs';
-import { buildDesc, parseDesc, buildItems, classifyItems, KEY_RE } from './desc.mjs';
+import { buildDesc, parseDesc, buildItems, classifyItems, KEY_RE, OTHER_TITLE, REC_PREFIX } from './desc.mjs';
 import { readBlock, writeBlock, renderHostProse, hostTitle } from './state.mjs';
 import { createPushlog } from './pushlog.mjs';
 import { usage, notFound, takenOver } from './errors.mjs';
@@ -44,13 +44,20 @@ export function validateRound(input) {
     if (typeof q.context !== 'string') throw fail(`${at}.context must be a string`);
     const options = strList(q.options, `${at}.options`);
     if (options.length === 0) throw fail(`${at}.options must have at least one entry`);
+    if (options.some((o) => !o.trim())) throw fail(`${at}.options must not contain an empty string`);
+    if (new Set(options).size !== options.length) throw fail(`${at}.options must not contain duplicate entries`);
+    if (options.some((o) => o.startsWith(REC_PREFIX))) throw fail(`${at}.options must not start with the recommended-item prefix "${REC_PREFIX}"`);
+    if (options.includes(OTHER_TITLE)) throw fail(`${at}.options must not equal the reserved Other item`);
     if (!q.rec || typeof q.rec.label !== 'string' || typeof q.rec.why !== 'string') throw fail(`${at}.rec must be {label, why}`);
     if (!options.includes(q.rec.label)) throw fail(`${at}.rec.label must be one of options`);
     const desc = buildDesc({ key: q.key, context: q.context, rec: q.rec });
     if (desc.length > MAX_TEXT) throw fail(`${at} desc exceeds ${MAX_TEXT} chars`);
     return { key: q.key, title: q.title, context: q.context, rec: { label: q.rec.label, why: q.rec.why }, options };
   });
-  if (renderHostProse({ effort: r.effort, host }).length > MAX_TEXT) throw fail(`host prose exceeds ${MAX_TEXT} chars`);
+  // Measure the real body that will be written: prose wrapped in the state fence, with a
+  // representative owner/gen so the cap reflects what push actually sends, not just the prose.
+  const hostBody = writeBlock(renderHostProse({ effort: r.effort, host }), { v: 1, owner: 'o_xxxxxx', gen: 0, round: r.round });
+  if (hostBody.length > MAX_TEXT) throw fail(`host body exceeds ${MAX_TEXT} chars`);
   return { effort: r.effort, round: r.round, host, questions };
 
   /** @param {unknown} v @param {string} name @returns {string[]} */
@@ -135,10 +142,15 @@ async function fetchQuestions(ctx, layout) {
   for (const t of tasks) {
     if (t.parentId !== layout.hostId) continue;
     const parsed = parseDesc(t.desc);
-    const key = parsed.key ?? keyByTask.get(t.id) ?? null;
+    // The pushlog's own reverse lookup wins: it is what *this* CLI created this task for. The
+    // footer key is only a fallback for taskIds the pushlog doesn't know (e.g. a pre-pushlog
+    // task). If a task's footer disagrees with the pushlog, that's a forged/misattributed desc,
+    // not a real match — treat it the same as an edited answer for this question.
+    const key = keyByTask.get(t.id) ?? parsed.key ?? null;
     if (!key) { ctx.log.debug(`ignoring unkeyed task ${t.id}`); continue; }
     const items = classifyItems(t.items);
-    const q = { key, taskId: t.id, etag: t.etag ?? null, status: t.status ?? 0, title: t.title ?? null, items, desc: t.desc ?? null, descChanged: parsed.changed, answerText: parsed.answerText, signal: signalFor({ status: t.status ?? 0, items, descChanged: parsed.changed }) };
+    const descChanged = parsed.changed || parsed.key !== key;
+    const q = { key, taskId: t.id, etag: t.etag ?? null, status: t.status ?? 0, title: t.title ?? null, items, desc: t.desc ?? null, descChanged, answerText: parsed.answerText, signal: signalFor({ status: t.status ?? 0, items, descChanged }) };
     const prev = byKey.get(key);
     if (prev) { ctx.log.warn(`duplicate question ${key}: ${prev.taskId} and ${t.id}`); if (entries.get(key)?.taskId !== t.id) continue; }
     byKey.set(key, q);
@@ -160,6 +172,8 @@ export async function takeover(ctx) {
   const { prose, state } = await loadHost(ctx.api, layout);
   const owner = newOwner(ctx.random);
   const next = { v: /** @type {1} */ (1), owner, gen: (state?.gen ?? 0) + 1, round: state?.round ?? 0 };
+  // Last-write-wins: the server ignores etags, so a concurrent takeover between the GET
+  // above and this write is clobbered (accepted risk per spec).
   await writeHost(ctx.api, layout, prose.trim() ? prose : hostTitle(ctx.effort), next);
   return { owner, gen: next.gen, created: layout.created, listId: layout.listId, hostId: layout.hostId };
 }
@@ -171,11 +185,16 @@ export async function takeover(ctx) {
 export async function push(args) {
   const round = validateRound(args.round);
   if (round.effort !== args.effort) throw usage(`round.effort "${round.effort}" does not match --effort "${args.effort}"`);
-  const layout = await ensureLayout(args.api, args.effort);
-  await ensureTag(args.api);
+  // Resolve the effort without creating it — an effort that was never taken over must fail
+  // (not found) rather than silently getting a fresh layout, and the owner check below must
+  // run before any write.
+  const layout = await requireLayout(args);
   const { state } = await loadHost(args.api, layout);
   assertOwner(state, args.owner, args.effort);
+  await ensureTag(args.api);
   const next = { v: /** @type {1} */ (1), owner: args.owner, gen: state?.gen ?? 0, round: round.round };
+  // Last-write-wins: the server ignores etags, so a concurrent takeover between the GET
+  // above and this write is clobbered (accepted risk per spec).
   await writeHost(args.api, layout, renderHostProse({ effort: args.effort, host: round.host }), next);
 
   const pushlog = createPushlog({ dir: args.pushlogDir, listId: layout.listId });
@@ -225,6 +244,11 @@ export async function close(args) {
   if (!inp || typeof inp !== 'object') throw usage('close JSON: expected {answered?, wontdo?, reopen?}');
   const list = (/** @type {string} */ name) => { const v = inp[name]; if (v === undefined) return /** @type {string[]} */ ([]); if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) throw usage(`close JSON: ${name} must be an array of keys`); return v; };
   const answered = list('answered'), wontdo = list('wontdo'), reopen = list('reopen');
+  /** @type {Set<string>} */ const seenKeys = new Set();
+  for (const key of [...answered, ...wontdo, ...reopen]) {
+    if (seenKeys.has(key)) throw usage(`close JSON: key ${key} appears more than once`);
+    seenKeys.add(key);
+  }
   const layout = await requireLayout(args);
   const { state } = await loadHost(args.api, layout);
   assertOwner(state, args.owner, args.effort);

@@ -8,7 +8,7 @@ import { body } from '../helpers/fixtures.mjs';
 import { createApi } from '../../plugins/grill-over-ticktick/lib/api.mjs';
 import { createLogger } from '../../plugins/grill-over-ticktick/lib/log.mjs';
 import { readBlock } from '../../plugins/grill-over-ticktick/lib/state.mjs';
-import { parseDesc, classifyItems, OTHER_TITLE, buildDesc } from '../../plugins/grill-over-ticktick/lib/desc.mjs';
+import { parseDesc, classifyItems, OTHER_TITLE, buildDesc, REC_PREFIX } from '../../plugins/grill-over-ticktick/lib/desc.mjs';
 import { validateRound, compareKeys, signalFor, newOwner, takeover, push, pull, close, finish, efforts, ANSWERED } from '../../plugins/grill-over-ticktick/lib/rounds.mjs';
 
 const ROUND = {
@@ -41,8 +41,13 @@ test('validateRound: accepts the sample; rejects each broken field with exit 2',
   bad((r) => { r.questions[0].title = 'x'.repeat(81); }, /title/);
   bad((r) => { r.questions[0].rec.label = 'nope'; }, /rec.label/);
   bad((r) => { r.questions[0].options = []; }, /options/);
+  bad((r) => { r.questions[0].options = ['file', '']; }, /empty string/);
+  bad((r) => { r.questions[0].options = ['file', 'file']; }, /duplicate/);
+  bad((r) => { r.questions[0].options = [REC_PREFIX + 'file', 'env']; }, /prefix/);
+  bad((r) => { r.questions[0].options = [OTHER_TITLE, 'env']; }, /reserved Other/);
   bad((r) => { r.questions[0].context = 'x'.repeat(100001); }, /100000/);
   bad((r) => { r.host = null; }, /host/);
+  bad((r) => { r.host.goal = 'x'.repeat(99990); }, /host body exceeds 100000/);
   assert.throws(() => validateRound('nope'), (/** @type {any} */ e) => e.exitCode === 2);
 });
 
@@ -130,6 +135,24 @@ test('push adopts a question that exists in TickTick when the pushlog only has `
   assert.equal(tt.db.tasks.filter((x) => x.kind === 'CHECKLIST').length, 2);
 });
 
+test('push to a nonexistent effort → exit 6 and zero POSTs', async (t) => {
+  const { tt, ctx } = setup(t);
+  await assert.rejects(push({ ...ctx, owner: 'o_zzzzzz', round: structuredClone(ROUND) }), (/** @type {any} */ e) => e.exitCode === 6);
+  assert.ok(!tt.calls.some((c) => c.method === 'POST'));
+});
+
+test('push re-run with a mixed pushlog (one created, one creating-only) adopts the creating-only one and creates nothing', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner, listId } = await takeover(ctx);
+  const first = await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync(join(ctx.pushlogDir, `${listId}.log`), `creating r2.1\nr2.1 ${first.questions[0].taskId}\ncreating r2.2\n`);
+  const n = tt.db.tasks.filter((x) => x.kind === 'CHECKLIST').length;
+  const r = await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  assert.deepEqual(r.questions.map((q) => q.created), [false, false]);
+  assert.equal(tt.db.tasks.filter((x) => x.kind === 'CHECKLIST').length, n);
+});
+
 test('push refuses on owner mismatch (exit 3) before writing anything; requires round.effort to match', async (t) => {
   const { tt, ctx } = setup(t);
   await takeover(ctx);
@@ -190,6 +213,17 @@ test('pull maps a question whose footer was wiped via the pushlog (text signal, 
   assert.deepEqual([r.questions[0].key, r.questions[0].signal, r.questions[0].answerText], ['r2.1', 'text', null]);
 });
 
+test('pull: pushlog key wins over a forged/misattributed footer', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner } = await takeover(ctx);
+  const p = await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  const id1 = p.questions[0].taskId, id2 = p.questions[1].taskId;
+  tt.editDesc(id2, tt.find(id1).desc); // r2.2's task now carries r2.1's footer verbatim
+  const r = await pull(ctx);
+  assert.deepEqual(r.questions.map((q) => [q.key, q.taskId]), [['r2.1', id1], ['r2.2', id2]]);
+  assert.equal(r.questions.find((q) => q.key === 'r2.2')?.signal, 'text');
+});
+
 test('pull/close/finish → not found (6) when the effort does not exist', async (t) => {
   const { ctx } = setup(t);
   for (const f of [() => pull(ctx), () => close({ ...ctx, owner: 'o', input: {} }), () => finish(ctx)]) {
@@ -212,6 +246,15 @@ test('close: status-only writes for answered/wontdo/reopen; unknown keys skipped
   await assert.rejects(close({ ...ctx, owner, input: { answered: 'r2.1' } }), (/** @type {any} */ e) => e.exitCode === 2);
   const r2 = await close({ ...ctx, owner, input: { reopen: ['r2.1'] } });
   assert.deepEqual(r2.reopened, ['r2.1']); assert.equal(tt.find(p.questions[0].taskId).status, 0);
+});
+
+test('close rejects overlapping/duplicate keys across bins before any write', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner } = await takeover(ctx);
+  await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  const before = tt.calls.length;
+  await assert.rejects(close({ ...ctx, owner, input: { answered: ['r2.1'], reopen: ['r2.1'] } }), (/** @type {any} */ e) => e.exitCode === 2 && /key r2\.1 appears more than once/.test(e.message));
+  assert.ok(!tt.calls.slice(before).some((c) => c.method === 'POST'));
 });
 
 test('close maps keys via the footer when the pushlog is missing', async (t) => {
