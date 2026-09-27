@@ -204,7 +204,7 @@ test('close: status-only writes for answered/wontdo/reopen; unknown keys skipped
   const before = tt.calls.length;
   const r = await close({ ...ctx, owner, input: { answered: ['r2.1'], wontdo: ['r2.2'], reopen: ['r9.9'] } });
   assert.deepEqual(r, { closed: ['r2.1'], wontdo: ['r2.2'], reopened: [], skipped: ['r9.9'] });
-  const writes = tt.calls.slice(before).filter((c) => c.method === 'POST');
+  const writes = tt.calls.slice(before).filter((c) => c.method === 'POST' && c.path !== '/task/filter');
   assert.deepEqual(writes.map((c) => c.body), [{ id: p.questions[0].taskId, projectId: p.listId, status: 2 }, { id: p.questions[1].taskId, projectId: p.listId, status: -1 }]);
   assert.equal(tt.find(p.questions[0].taskId).status, 2);
   assert.equal(tt.find(p.questions[0].taskId).desc, buildDesc(ROUND.questions[0])); // desc untouched
@@ -212,6 +212,17 @@ test('close: status-only writes for answered/wontdo/reopen; unknown keys skipped
   await assert.rejects(close({ ...ctx, owner, input: { answered: 'r2.1' } }), (/** @type {any} */ e) => e.exitCode === 2);
   const r2 = await close({ ...ctx, owner, input: { reopen: ['r2.1'] } });
   assert.deepEqual(r2.reopened, ['r2.1']); assert.equal(tt.find(p.questions[0].taskId).status, 0);
+});
+
+test('close maps keys via the footer when the pushlog is missing', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner, listId } = await takeover(ctx);
+  const p = await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  const { rmSync } = await import('node:fs');
+  rmSync(join(ctx.pushlogDir, `${listId}.log`));
+  const r = await close({ ...ctx, owner, input: { answered: ['r2.1'] } });
+  assert.deepEqual(r.closed, ['r2.1']);
+  assert.equal(tt.find(p.questions[0].taskId).status, 2);
 });
 
 test('finish exports prose + decisions and archives the list', async (t) => {

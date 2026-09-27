@@ -228,17 +228,18 @@ export async function close(args) {
   const layout = await requireLayout(args);
   const { state } = await loadHost(args.api, layout);
   assertOwner(state, args.owner, args.effort);
-  // Status-only writes need just the key → taskId mapping the pushlog already has;
-  // unlike pull/finish, close never needs a /task/filter round-trip to classify signals.
-  const pushlog = createPushlog({ dir: args.pushlogDir, listId: layout.listId });
-  const entries = await pushlog.load();
+  // Resolve key → taskId the same way pull does: footer key first, pushlog reverse-lookup
+  // as fallback. The pushlog alone is not enough — it can be lost (other machine, wiped
+  // state dir) while the footer on the task itself survives.
+  const { questions } = await fetchQuestions(args, layout);
+  const byKey = new Map(questions.filter((q) => q.signal !== 'missing').map((q) => [q.key, q]));
   const out = { closed: /** @type {string[]} */ ([]), wontdo: /** @type {string[]} */ ([]), reopened: /** @type {string[]} */ ([]), skipped: /** @type {string[]} */ ([]) };
   /** @param {string[]} keys @param {number} status @param {string[]} into */
   const apply = async (keys, status, into) => {
     for (const key of keys) {
-      const taskId = entries.get(key)?.taskId;
-      if (!taskId) { out.skipped.push(key); continue; }
-      await args.api.post(`/task/${taskId}`, { id: taskId, projectId: layout.listId, status });
+      const q = byKey.get(key);
+      if (!q) { out.skipped.push(key); continue; }
+      await args.api.post(`/task/${q.taskId}`, { id: q.taskId, projectId: layout.listId, status });
       into.push(key);
     }
   };
