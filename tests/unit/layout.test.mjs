@@ -48,6 +48,19 @@ test('ensureLayout adds a missing host/column to an existing list', async () => 
   tt.db.tasks.length = 0; tt.db.columns.length = 0;
   const L = await ensureLayout(api, 'e');
   assert.equal(L.listId, s.listId); assert.equal(L.created, true); assert.ok(L.hostId); assert.ok(L.columnId);
+  assert.equal(tt.find(L.hostId).columnId, L.columnId);
+});
+
+test('ensureLayout moves a pre-existing host into the 📍 column', async () => {
+  const { tt, api } = setup();
+  const s = tt.seedEffort('e');
+  tt.db.columns.length = 0;
+  const before = tt.calls.length;
+  const L = await ensureLayout(api, 'e');
+  assert.notEqual(L.columnId, s.columnId);
+  assert.equal(tt.find(L.hostId).columnId, L.columnId);
+  const taskPosts = tt.calls.slice(before).filter((c) => c.method === 'POST' && c.path === `/task/${s.hostId}`);
+  assert.equal(taskPosts.length, 1);
 });
 
 test('findLayout is read-only and null when anything is missing', async () => {

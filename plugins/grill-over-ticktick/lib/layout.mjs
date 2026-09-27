@@ -22,12 +22,12 @@ async function findList(api, groupId, effort) {
 /** @param {any} data @param {string} effort */
 function hostIn(data, effort) {
   const title = hostTitle(effort);
-  return (data.tasks ?? []).find((/** @type {any} */ t) => t.kind === 'NOTE' && t.title === title) ?? null;
+  return (data?.tasks ?? []).find((/** @type {any} */ t) => t.kind === 'NOTE' && t.title === title) ?? null;
 }
 
 /** @param {any} data */
 function columnIn(data) {
-  return (data.columns ?? []).find((/** @type {any} */ c) => c.name === COLUMN) ?? null;
+  return (data?.columns ?? []).find((/** @type {any} */ c) => c.name === COLUMN) ?? null;
 }
 
 /**
@@ -64,6 +64,8 @@ export async function ensureLayout(api, effort) {
       content: writeBlock(hostTitle(effort), { v: 1, owner: null, gen: 0, round: 0 }),
     });
     created = true;
+  } else if (host.columnId !== column.id) {
+    host = await api.post(`/task/${host.id}`, { id: host.id, projectId: list.id, columnId: column.id });
   }
   return { groupId: group.id, listId: list.id, columnId: column.id, hostId: host.id, created };
 }
