@@ -11,7 +11,7 @@ const TOKEN = '0123456789abcdef-deliberately-wrong'; // the exact string the 401
 function make(routes) {
   const f = fakeFetch(routes); const clock = fakeClock();
   /** @type {string[]} */ const lines = [];
-  const log = createLogger({ stderr: /** @type {any} */ ({ write: (/** @type {string} */ s) => { lines.push(s); return true; } }), secrets: [TOKEN] });
+  const log = createLogger({ stderr: /** @type {any} */ ({ write: (/** @type {string} */ s) => { lines.push(s); return true; } }), secrets: [TOKEN], debug: true });
   const api = createApi({ fetch: f, token: TOKEN, log, sleep: clock.sleep, random: () => 0.5 });
   return { api, f, clock, lines };
 }
@@ -68,11 +68,44 @@ test('gives up after 5 attempts on retryable status → exit 1', async () => {
 
 test('network errors retry and are redacted', async () => {
   const boom = new TypeError(`fetch failed for ${TOKEN}`);
-  const { api, f } = make([{ method: 'GET', path: '/project', reply: [boom, ok([1])] }]);
+  const { api, f, lines } = make([{ method: 'GET', path: '/project', reply: [boom, ok([1])] }]);
   assert.deepEqual(await api.get('/project'), [1]);
   assert.equal(f.calls.length, 2);
+  assert.ok(lines.length > 0);
+  assert.ok(!lines.join('').includes(TOKEN));
   const { api: api2 } = make([{ method: 'GET', path: '/project', reply: boom }]);
   await assert.rejects(api2.get('/project'), (/** @type {any} */ e) => e.exitCode === 1 && !e.message.includes(TOKEN) && /network error after 5 attempts/.test(e.message));
+});
+
+test('abort during body read is retried like a network error', async () => {
+  /** @type {string[]} */
+  const lines = [];
+  let n = 0;
+  /** @type {any} */
+  const flakyFetch = async () => {
+    n += 1;
+    if (n === 1) {
+      return {
+        ok: true,
+        status: 200,
+        text: async () => { throw Object.assign(new Error(`aborted ${TOKEN}`), { name: 'AbortError' }); },
+      };
+    }
+    return new Response('[1]', { status: 200 });
+  };
+  const clock = fakeClock();
+  const log = createLogger({ stderr: /** @type {any} */ ({ write: (/** @type {string} */ s) => { lines.push(s); return true; } }), secrets: [TOKEN], debug: true });
+  const api = createApi({ fetch: flakyFetch, token: TOKEN, log, sleep: clock.sleep, random: () => 0.5 });
+  assert.deepEqual(await api.get('/project'), [1]);
+  assert.equal(n, 2);
+  assert.deepEqual(clock.sleeps, [500]);
+  assert.ok(!lines.join('').includes(TOKEN));
+});
+
+test('malformed 2xx JSON → exit 1 apiError, no retry', async () => {
+  const { api, f } = make([{ method: 'GET', path: '/project', reply: { status: 200, text: '{not json' } }]);
+  await assert.rejects(api.get('/project'), (/** @type {any} */ e) => e.exitCode === 1 && /invalid JSON/.test(e.message));
+  assert.equal(f.calls.length, 1);
 });
 
 test('400 is not retried', async () => {

@@ -44,6 +44,7 @@ export function createApi({ fetch, token, log, sleep = (ms) => new Promise((r) =
     /** @type {string} */ let lastNote = '';
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       /** @type {Response} */ let res;
+      /** @type {string} */ let text;
       try {
         res = await fetch(baseUrl + path, {
           method,
@@ -51,14 +52,18 @@ export function createApi({ fetch, token, log, sleep = (ms) => new Promise((r) =
           body: body === undefined ? undefined : JSON.stringify(body),
           signal: AbortSignal.timeout(timeoutMs),
         });
+        text = await res.text();
       } catch (err) {
         lastNote = clean(err instanceof Error ? err.message : String(err));
         log.debug(`network error on ${where} (attempt ${attempt}): ${lastNote}`);
         if (attempt < MAX_ATTEMPTS) { await sleep(backoffMs(attempt, random)); continue; }
         throw apiError(`network error after ${MAX_ATTEMPTS} attempts: ${where}: ${lastNote}`);
       }
-      const text = await res.text();
-      if (res.ok) return text.trim() ? JSON.parse(text) : null;
+      if (res.ok) {
+        if (!text.trim()) return null;
+        try { return JSON.parse(text); }
+        catch { throw apiError(`invalid JSON from server: ${where}`, { status: res.status }); }
+      }
       if (res.status === 401) throw authError();
       /** @type {any} */ let parsed = null;
       try { parsed = text.trim() ? JSON.parse(text) : null; } catch { parsed = null; }
