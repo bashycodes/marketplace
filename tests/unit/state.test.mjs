@@ -28,6 +28,15 @@ test('malformed json in block → state null', () => {
   assert.equal(readBlock('p\n\n```grill\n{oops\n```\n').state, null);
 });
 
+test('an earlier grill fence in the prose does not hide the last block', () => {
+  const early = JSON.stringify({ v: 1, owner: null, gen: 0, round: 0 });
+  const late = JSON.stringify({ v: 1, owner: 'o_aaaaaa', gen: 2, round: 1 });
+  const body = `prose\n\n\`\`\`grill\n${early}\n\`\`\`\n\nmore text\n\n\`\`\`grill\n${late}\n\`\`\`\n`;
+  const result = readBlock(body);
+  assert.deepEqual(result.state, { v: 1, owner: 'o_aaaaaa', gen: 2, round: 1 });
+  assert.ok(result.prose.endsWith('more text'));
+});
+
 test('CRLF body still parses', () => {
   const body = writeBlock('p\nq', S).replace(/\n/g, '\r\n');
   assert.deepEqual(readBlock(body).state, S);

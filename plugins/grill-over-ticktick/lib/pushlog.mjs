@@ -1,5 +1,9 @@
 import * as nodeFs from 'node:fs/promises';
 import { join } from 'node:path';
+import { TtError, EXIT } from './errors.mjs';
+
+const KEY_RE = /^r\d+\.\d+$/;
+const TASK_ID_RE = /^[A-Za-z0-9_-]+$/;
 
 /** @typedef {Pick<typeof nodeFs, 'mkdir' | 'appendFile' | 'readFile'>} LogFs */
 /** @typedef {{ path: string, creating: (key: string) => Promise<void>, created: (key: string, taskId: string) => Promise<void>, load: () => Promise<Map<string, { taskId: string | null }>> }} Pushlog */
@@ -30,14 +34,25 @@ export function createPushlog({ dir, listId, fs = nodeFs }) {
     async load() {
       /** @type {string} */
       let text = '';
-      try { text = await fs.readFile(path, 'utf8'); } catch { return new Map(); }
+      try {
+        text = await fs.readFile(path, 'utf8');
+      } catch (err) {
+        const code = err && typeof err === 'object' && 'code' in err ? /** @type {any} */ (err).code : undefined;
+        if (code === 'ENOENT') return new Map();
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new TtError('pushlog_read', `cannot read ${path}: ${code ?? msg}`, EXIT.ERROR);
+      }
+      const rawLines = text.split('\n');
+      if (!text.endsWith('\n') && rawLines.length) rawLines.pop();
       /** @type {Map<string, { taskId: string | null }>} */
       const map = new Map();
-      for (const raw of text.split('\n')) {
+      for (const raw of rawLines) {
         const line = raw.trim(); if (!line) continue;
-        const [a, b] = line.split(/\s+/);
-        if (a === 'creating' && b) { if (!map.has(b)) map.set(b, { taskId: null }); }
-        else if (a && b) map.set(a, { taskId: b });
+        const parts = line.split(/\s+/);
+        if (parts.length !== 2) continue;
+        const [a, b] = parts;
+        if (a === 'creating' && KEY_RE.test(b)) { if (!map.has(b)) map.set(b, { taskId: null }); }
+        else if (KEY_RE.test(a) && TASK_ID_RE.test(b)) map.set(a, { taskId: b });
       }
       return map;
     },

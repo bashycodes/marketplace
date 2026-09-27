@@ -1,7 +1,8 @@
 /** @typedef {{ v: 1, owner: string | null, gen: number, round: number }} HostState */
 /** @typedef {{ goal: string, decided: string[], open: string[], notAsked: string[] }} HostProse */
 
-const BLOCK_RE = /(?:^|\n)```grill\n([\s\S]*?)\n```\s*$/;
+const FENCE_OPEN = '```grill\n';
+const TAIL_RE = /^```grill\n([\s\S]*?)\n```\s*$/;
 
 /** @param {string} effort @returns {string} */
 export function hostTitle(effort) { return `📍 ${effort}`; }
@@ -12,14 +13,16 @@ export function hostTitle(effort) { return `📍 ${effort}`; }
  */
 export function readBlock(body) {
   const text = (body ?? '').replace(/\r\n?/g, '\n');
-  const m = BLOCK_RE.exec(text);
+  const start = text.lastIndexOf(FENCE_OPEN);
+  if (start < 0 || !(start === 0 || text[start - 1] === '\n')) return { prose: text, state: null };
+  const m = TAIL_RE.exec(text.slice(start));
   if (!m) return { prose: text, state: null };
   /** @type {any} */
   let parsed;
   try { parsed = JSON.parse(m[1]); } catch { return { prose: text, state: null }; }
   if (!parsed || typeof parsed !== 'object' || typeof parsed.gen !== 'number') return { prose: text, state: null };
   const state = { v: /** @type {1} */ (1), owner: typeof parsed.owner === 'string' ? parsed.owner : null, gen: parsed.gen, round: typeof parsed.round === 'number' ? parsed.round : 0 };
-  return { prose: text.slice(0, m.index).trimEnd(), state };
+  return { prose: text.slice(0, start).trimEnd(), state };
 }
 
 /**
