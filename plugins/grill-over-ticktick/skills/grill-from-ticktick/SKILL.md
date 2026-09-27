@@ -12,7 +12,8 @@ Read `${CLAUDE_PLUGIN_ROOT}/references/ingest.md` and `${CLAUDE_PLUGIN_ROOT}/ref
 2. **Take over:** `tt-grill takeover --effort "<E>"` → `<O>`. This makes any session that is still waiting exit with code 3; that is intended.
 3. **Ingest and retire in one go.** Run `ingest.md` steps 1–4 only (pull, interpret, record). Then send exactly ONE close — no `reopen` in this mode:
    - `answered` = the keys you took answers from;
-   - `wontdo` = every question of **any** round with `ingested: false` whose signal is `none`, `other-only` or `done` (plus any empty-answer `text` per `ingest.md`).
+   - `wontdo` = every question of **any** round with `ingested: false` whose signal is `none`, `other-only`, `done` or `wontdo` (set on the phone), plus the re-ask cases from `ingest.md` (empty-answer `text`, contradicting ticks).
+   - Never list a `missing` key; it is ignored.
    ```bash
    tt-grill close --effort "<E>" --owner "<O>" <<'JSON'
    {"answered": ["r2.1"], "wontdo": ["r1.3", "r2.2"]}

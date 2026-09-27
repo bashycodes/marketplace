@@ -26,7 +26,7 @@ All commands print one JSON value on stdout and `{"error":"<code>","message":"�
   ]
 }
 ```
-Rules: `effort` must equal `--effort`; `round` ≥ 1; `key` matches `^r\d+\.\d+$` and is unique; `title` ≤ 80 chars; `rec.label` ∈ `options`; `options` must be non-empty with no empty strings and no duplicates, and no option may start with the recommended-item prefix `⭐ ` or equal the reserved item `Other → type after ✍️` — the CLI adds the `⭐ ` prefix to `rec.label` and appends the Other item itself, so never include either in `options`. `push` against an effort that was was never taken over (`takeover`) exits 6 (not found) — it never creates the layout. `host.*` is the prose for the host note; keep `open` entries as `r2.1 <title> — ⭐ <rec label>`.
+Rules: `effort` must equal `--effort`; `round` ≥ 1; `key` matches `^r\d+\.\d+$` and is unique; `title` ≤ 80 chars; `rec.label` ∈ `options`; `options` must be non-empty with no empty strings and no duplicates, and no option may start with the recommended-item prefix `⭐ ` or equal the reserved item `Other → type after ✍️` — the CLI adds the `⭐ ` prefix to `rec.label` and appends the Other item itself, so never include either in `options`. `push` against an effort that was never taken over (`takeover`) exits 6 (not found) — it never creates the layout. `host.*` is the prose for the host note; keep `open` entries as `r2.1 <title> — ⭐ <rec label>`.
 
 Output: `{listId, hostId, owner, gen, round, questions:[{key, taskId, created}]}`. Re-running `push` with the same round is safe (`created:false`).
 
@@ -40,7 +40,7 @@ Output: `{listId, hostId, owner, gen, round, questions:[{key, taskId, created}]}
 ```
 `signal` ∈ `none | tick | text | tick+text | other-only | done | wontdo | missing` (mechanical; see `ingest.md` for meaning). Questions are sorted by key and include earlier rounds.
 
-`ingested` (every question, including `missing` ones): `true` once a previous `close` set this question to answered (`answered` → status 2) or won't-do (`wontdo` → status −1); `reopen` does not set it. `false` when unknown. It lives in the local pushlog, so on another machine it reads `false`. A closed question keeps its `tick`/`text` signal, so use `ingested`, not `status`, to tell a consumed answer from a new one.
+`ingested` (every question, including `missing` ones): `true` once a previous `close` set this question to answered (`answered` → status 2) or won't-do (`wontdo` → status −1); `reopen` does not set it. `false` when unknown; a `missing` question can never be closed, so its flag never changes — ignore it (see `ingest.md`). It lives in the local pushlog, so on another machine it reads `false`. A closed question keeps its `tick`/`text` signal, so use `ingested`, not `status`, to tell a consumed answer from a new one.
 
 `truncated:true` = the 200-task filter cap was hit. Warn the user and continue with what you got; questions beyond the cap are invisible until older ones are archived via `finish`.
 

@@ -29,7 +29,7 @@ You run the interview of the `mattpocock-skills:grilling` skill (load it with th
 5. **Tell the user** the round is in TickTick ("N questions in 🔥 Grill inbox, round R") and that they can also just type here to continue in the terminal.
 6. **Wait in the background:** `tt-grill wait --effort "<E>" --owner "<O>"` with the Bash tool's `run_in_background: true`. Do nothing else while it runs; it costs no tokens. It only returns for answers to the current round.
 7. **When the wait returns:**
-   - exit 0 → ingest (`ingest.md`; the wait output already contains the `pull` result, but run `pull` again if the ingest is more than a minute later). If no question with `ingested: false` has a signal other than `none` / `other-only`, do not push — run `wait` again (step 6). Otherwise close once, e.g.:
+   - exit 0 → ingest (`ingest.md`; the wait output already contains the `pull` result, but run `pull` again if the ingest is more than a minute later). If the ingest would send nothing in `answered` / `wontdo` / `reopen`, do not push — run `wait` again (step 6). If the wait returned `settled` and the only touched questions are `other-only`, re-run `wait` with `--settle` doubled (10m → 20m → 40m → 80m, cap 2h) instead of pushing. Otherwise close once, e.g.:
      ```bash
      tt-grill close --effort "<E>" --owner "<O>" <<'JSON'
      {"answered": ["r2.1", "r2.3"], "wontdo": [], "reopen": ["r2.2"]}
