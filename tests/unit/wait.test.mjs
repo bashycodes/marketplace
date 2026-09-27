@@ -21,6 +21,7 @@ test('parseDuration + defaults', () => {
   assert.equal(parseDuration('90s'), 90 * S); assert.equal(parseDuration('3m'), 3 * M); assert.equal(parseDuration('24h'), 24 * 60 * M); assert.equal(parseDuration('250ms'), 250);
   assert.throws(() => parseDuration('3 m'), (/** @type {any} */ e) => e.exitCode === 2);
   assert.throws(() => parseDuration('soon'), (/** @type {any} */ e) => e.exitCode === 2);
+  assert.throws(() => parseDuration('0s'), (/** @type {any} */ e) => e.exitCode === 2);
   assert.deepEqual(DEFAULTS, { every: '3m', settle: '10m', grace: '90s', max: '24h' });
 });
 

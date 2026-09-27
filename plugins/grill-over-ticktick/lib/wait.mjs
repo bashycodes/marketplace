@@ -10,6 +10,7 @@ const UNITS = { ms: 1, s: 1000, m: 60_000, h: 3_600_000 };
 export function parseDuration(s) {
   const m = /^(\d+)(ms|s|m|h)$/.exec(String(s).trim());
   if (!m) throw usage(`bad duration "${s}" (use e.g. 90s, 3m, 24h)`);
+  if (Number(m[1]) === 0) throw usage(`duration must be > 0: "${s}"`);
   return Number(m[1]) * UNITS[/** @type {keyof typeof UNITS} */ (m[2])];
 }
 
