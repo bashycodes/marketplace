@@ -16,7 +16,7 @@ Round trip
 - [ ] Tick `Other` only → stays open; Claude does not treat it as answered.
 - [ ] Swipe-complete a question without ticking → Claude reopens it and says it is still open.
 - [ ] Mark a question won't-do → Claude drops it and notes it in the host prose.
-- [ ] Delete a question → Claude drops it (signal `missing`) and does not re-create it.
+- [ ] Delete a question → Claude drops it (signal `missing`, sent in close `drop`), does not re-create it, and the next `wait` no longer counts it.
 - [ ] Tick two contradicting items → Claude re-asks in the next round with a note.
 - [ ] Second round: `wait` does not return until a round-2 answer arrives (the closed round-1 answers do not end it); no duplicate questions are pushed.
 

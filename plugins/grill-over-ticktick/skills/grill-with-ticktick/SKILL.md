@@ -13,7 +13,7 @@ You run the interview of the `mattpocock-skills:grilling` skill (load it with th
 1. **Effort name.** If `$ARGUMENTS` gives none, propose `<repo>-<topic>` (kebab-case, ≤ 40 chars) and confirm it in the terminal — the user is at the laptop right now. Quote it in every command: `--effort "<E>"`.
 2. **Take over:** `tt-grill takeover --effort "<E>"` → remember `owner` as `<O>` for this conversation. Exit 5 → tell the user to run `/setup-ticktick` and stop.
 3. **Ingest first** (answers may be waiting from an earlier session): follow `ingest.md`. If the host already has open questions of the current round, do not re-ask them.
-4. **Build the round** exactly as `grilling` would: recompute the frontier, number the questions `r<round>.<n>` where `<round>` = host `round` + 1 (start at 1), give each a ≤ 80-char title, 1–3 lines of context, a recommended answer with a one-line why, and 2–5 options. Write the host prose (`goal`, `decided`, `open`, `notAsked`). Send it with a quoted heredoc (no shell expansion inside):
+4. **Build the round** exactly as `grilling` would: recompute the frontier, number the questions `r<round>.<n>` where `<round>` = host `round` + 1 (start at 1), give each a ≤ 80-char title, 1–3 lines of context, a recommended answer with a one-line why, and 2–5 options. Write the host prose (`goal`, `decided`, `open`, `notAsked`). If the next round would contain no new questions (everything in the frontier is already open in TickTick), do not push; go to step 6 and wait. Send it with a quoted heredoc (no shell expansion inside):
    ```bash
    tt-grill push --effort "<E>" --owner "<O>" <<'JSON'
    {"effort": "<E>", "round": 2,
@@ -29,13 +29,13 @@ You run the interview of the `mattpocock-skills:grilling` skill (load it with th
 5. **Tell the user** the round is in TickTick ("N questions in 🔥 Grill inbox, round R") and that they can also just type here to continue in the terminal.
 6. **Wait in the background:** `tt-grill wait --effort "<E>" --owner "<O>"` with the Bash tool's `run_in_background: true`. Do nothing else while it runs; it costs no tokens. It only returns for answers to the current round.
 7. **When the wait returns:**
-   - exit 0 → ingest (`ingest.md`; the wait output already contains the `pull` result, but run `pull` again if the ingest is more than a minute later). If the ingest would send nothing in `answered` / `wontdo` / `reopen`, do not push — run `wait` again (step 6). If the wait returned `settled` and the only touched questions are `other-only`, re-run `wait` with `--settle` doubled (10m → 20m → 40m → 80m, cap 2h) instead of pushing. Otherwise close once, e.g.:
+   - exit 0 → ingest (`ingest.md`; the wait output already contains the `pull` result, but run `pull` again if the ingest is more than a minute later). If the ingest would send nothing in `answered` / `wontdo` / `reopen` / `drop`, do not push — run `wait` again (step 6). If the wait returned `settled` and the only touched questions are `other-only`, re-run `wait` with `--settle` doubled (10m → 20m → 40m → 80m, cap 2h) instead of pushing. Otherwise close once, e.g.:
      ```bash
      tt-grill close --effort "<E>" --owner "<O>" <<'JSON'
-     {"answered": ["r2.1", "r2.3"], "wontdo": [], "reopen": ["r2.2"]}
+     {"answered": ["r2.1", "r2.3"], "wontdo": [], "reopen": ["r2.2"], "drop": []}
      JSON
      ```
-     Recompute the frontier. Empty frontier → finish as `grilling` does: state the shared understanding, then hand back to the user; offer `tt-grill finish --effort "<E>"` (archives the list) and run it only if they agree. Otherwise push the next round (step 4). With `--once` in `$ARGUMENTS`, stop after one push + wait + ingest.
+     Recompute the frontier. Empty frontier → finish as `grilling` does: state the shared understanding, then hand back to the user; offer `tt-grill finish --effort "<E>"` (archives the list) and run it only if they agree. Otherwise push the next round (step 4). After a partial `settled`, pushing round N+1 removes round N's still-open questions from `wait`'s view; answers to them are still picked up at the next ingest. With `--once` in `$ARGUMENTS`, stop after one push + wait + ingest.
    - exit 3 → another session took over; say so and stop.
    - exit 4 → nothing (or not everything) answered within the limit; report `answered`/`total` from stderr and offer to re-run this skill later.
    - exit 5 / 6 → per `round-schema.md`.

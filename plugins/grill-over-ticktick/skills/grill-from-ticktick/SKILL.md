@@ -13,10 +13,10 @@ Read `${CLAUDE_PLUGIN_ROOT}/references/ingest.md` and `${CLAUDE_PLUGIN_ROOT}/ref
 3. **Ingest and retire in one go.** Run `ingest.md` steps 1–4 only (pull, interpret, record). Then send exactly ONE close — no `reopen` in this mode:
    - `answered` = the keys you took answers from;
    - `wontdo` = every question of **any** round with `ingested: false` whose signal is `none`, `other-only`, `done` or `wontdo` (set on the phone), plus the re-ask cases from `ingest.md` (empty-answer `text`, contradicting ticks).
-   - Never list a `missing` key; it is ignored.
+   - `drop` = every `missing` key with `ingested: false` (deleted on the phone; consumed with no TickTick write).
    ```bash
    tt-grill close --effort "<E>" --owner "<O>" <<'JSON'
-   {"answered": ["r2.1"], "wontdo": ["r1.3", "r2.2"]}
+   {"answered": ["r2.1"], "wontdo": ["r1.3", "r2.2"], "drop": ["r2.4"]}
    JSON
    ```
    Summarise what you learned in two or three lines and name the retired questions; the live round re-asks what still matters.

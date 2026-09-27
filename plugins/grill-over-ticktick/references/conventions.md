@@ -8,7 +8,7 @@
 - **Host** = a `kind: NOTE` task titled `📍 <effort>` in the `📍` column. Notes have no checkbox, so a stray tap cannot complete them.
 - **Question** = a `CHECKLIST` subtask of the host (`parentId` = host), tagged **`grill`**. The user's smart list "🔥 Grill inbox" filters on that tag.
 - No dates, reminders or comments are ever used.
-- Only `takeover` creates the folder/list/host/tag when they are missing. `push`, `pull`, `close`, `wait` and `finish` all resolve an existing layout and fail with exit 6 (not found) if the effort was never taken over. Always `takeover` before the first `push` for an effort.
+- Only `takeover` creates the folder/list/host/tag when they are missing. `push`, `pull`, `close`, `wait` and `finish` all resolve an existing layout and fail with exit 6 (not found) if the effort was never taken over or its host note was deleted. The host is always read via `GET /project/{listId}/data` (never the single-task GET, which still returns deleted tasks); `pull` and every `wait` poll use it. Always `takeover` before the first `push` for an effort.
 
 ## Question format
 - `title` = the question, ≤ 80 chars.

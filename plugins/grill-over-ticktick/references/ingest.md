@@ -2,16 +2,17 @@
 
 Both `/grill-with-ticktick` and `/grill-from-ticktick` run this identically.
 
-1. `tt-grill pull --effort "<E>"` → parse stdout. Exit 6 → say "host not found in TickTick" and offer to re-push the round. Exit 5 → point at `/setup-ticktick`.
-2. Consider **every question with `ingested: false`** (any round; `ingested: true` means an earlier `close` already consumed it — skip it). Interpret each per the table below: `none` and `other-only` stay open (neither closed nor re-pushed); `done` (completed, no tick, no text) → `reopen`; **re-ask** cases — a `text` whose `answerText` is empty (`""`: the user edited the context, not the answer) and contradicting ticks — are unanswered: do not put them in `answered`; send the old key in `wontdo` and re-ask under a new key in the next round; a `wontdo` set on the phone → send it in `wontdo` too (re-sending −1 is harmless and marks it ingested); `missing` (deleted) is ignored — never closed, never re-pushed, never counted.
+1. `tt-grill pull --effort "<E>"` → parse stdout. Exit 6 (no such effort, or the host note was deleted) → say "host not found in TickTick" and offer to re-push the round. Exit 5 → point at `/setup-ticktick`.
+2. Consider **every question with `ingested: false`** (any round; `ingested: true` means an earlier `close` already consumed it — skip it). Interpret each per the table below: `none` and `other-only` stay open (neither closed nor re-pushed); `done` (completed, no tick, no text) → `reopen`; **re-ask** cases — a `text` whose `answerText` is empty (`""`: the user edited the context, not the answer) and contradicting ticks — are unanswered: do not put them in `answered`; send the old key in `wontdo` and re-ask under a new key in the next round; a `wontdo` set on the phone → send it in `wontdo` too (re-sending −1 is harmless and marks it ingested); `missing` (deleted on the phone) → send it in `drop`: it is consumed (marked ingested, no TickTick write), dropped from the tree, never re-pushed, never counted.
 3. **Never auto-accept ⭐**: a recommended answer counts only when the user ticked it or typed it.
 4. Record every interpreted answer in your design tree exactly as if the user had typed it in the terminal.
-5. `tt-grill close --effort "<E>" --owner "<O>"` with stdin `{"answered": [...], "wontdo": [...], "reopen": [...]}` (each key must appear in at most one of the three arrays — a repeated key is a usage error):
+5. `tt-grill close --effort "<E>" --owner "<O>"` with stdin `{"answered": [...], "wontdo": [...], "reopen": [...], "drop": [...]}` (each key must appear in at most one of the four arrays — a repeated key is a usage error):
    - `answered` = every key you took an answer from,
    - `reopen` = stray-completed questions (`done`) that stay open,
-   - `wontdo` = phone-`wontdo` questions, re-ask cases (empty-answer `text`, contradicting ticks), questions **you** retire as superseded, and on `/grill-from-ticktick` every still-open one.
-   Never put a `missing` key in any list. If all three lists would be empty, the ingest found nothing new.
-   `close` marks every `answered` / `wontdo` key `ingested`, so the next `pull` skips it; a reopened or untouched question stays `ingested:false` and is reconsidered next time.
+   - `wontdo` = phone-`wontdo` questions, re-ask cases (empty-answer `text`, contradicting ticks), questions **you** retire as superseded, and on `/grill-from-ticktick` every still-open one,
+   - `drop` = every `missing` key with `ingested: false` (and only those; `drop` never writes to TickTick).
+   If all four lists would be empty, the ingest found nothing new.
+   `close` marks every `answered` / `wontdo` / `drop` key `ingested`, so the next `pull` skips it and `wait` stops counting it; a reopened or untouched question stays `ingested:false` and is reconsidered next time.
 
 ## Interpretation table
 | In TickTick | `signal` | Treat as |
@@ -22,7 +23,7 @@ Both `/grill-with-ticktick` and `/grill-from-ticktick` run this identically.
 | several items ticked | `tick` | read them together; if they contradict → re-ask case: old key in `wontdo`, re-ask under a new key next round with a one-line note |
 | Other ticked, nothing typed | `other-only` | unanswered; leave open (do **not** close) |
 | won't-do | `wontdo` | dropped from the tree; send the key in close `wontdo` (marks it ingested); mention it in the host `decided` list as "dropped" |
-| deleted | `missing` | ignored: dropped from the tree, never closed, never re-pushed, never counted |
+| deleted | `missing` | send the key in close `drop` (marks it ingested, no API write); dropped from the tree, never re-pushed, never counted |
 | completed with no tick and no text | `done` | stray tap → `reopen` it; still unanswered |
 | nothing | `none` | unanswered |
 

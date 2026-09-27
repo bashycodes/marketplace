@@ -11,7 +11,7 @@ All commands print one JSON value on stdout and `{"error":"<code>","message":"�
 | 3 | taken over — another session owns this effort | stop this mode, tell the user |
 | 4 | `wait` gave up (`--max` reached); stderr carries `{"error":"gave_up","message":"…","answered":N,"total":M}` over the current round's not-yet-ingested questions | tell the user (quote `answered`/`total`); offer to re-run `/grill-with-ticktick` |
 | 5 | auth (no token or 401) | point the user at `/setup-ticktick`; never ask for the token in chat |
-| 6 | not found (no such effort / host — `push`, `pull`, `close`, `wait`, `finish` never create the layout; only `takeover` does) | offer to re-push the round (`takeover` then `push`) |
+| 6 | not found (no such effort, or its host note was deleted — `push`, `pull`, `close`, `wait`, `finish` never create the layout; only `takeover` does) | offer to re-push the round (`takeover` then `push`) |
 
 ## `push` stdin (round JSON)
 ```json
@@ -28,7 +28,9 @@ All commands print one JSON value on stdout and `{"error":"<code>","message":"�
 ```
 Rules: `effort` must equal `--effort`; `round` ≥ 1; `key` matches `^r\d+\.\d+$` and is unique; `title` ≤ 80 chars; `rec.label` ∈ `options`; `options` must be non-empty with no empty strings and no duplicates, and no option may start with the recommended-item prefix `⭐ ` or equal the reserved item `Other → type after ✍️` — the CLI adds the `⭐ ` prefix to `rec.label` and appends the Other item itself, so never include either in `options`. `push` against an effort that was never taken over (`takeover`) exits 6 (not found) — it never creates the layout. `host.*` is the prose for the host note; keep `open` entries as `r2.1 <title> — ⭐ <rec label>`.
 
-Output: `{listId, hostId, owner, gen, round, questions:[{key, taskId, created}]}`. Re-running `push` with the same round is safe (`created:false`).
+Round guards (exit 2, before any write): `round` lower than the host's `round` is refused (`round N is behind the host (round M)`); a `round` higher than the host's may not reuse a key that already exists in TickTick (pushlog or a child's footer) — a new round must use new keys. Re-pushing the host's current round is the idempotent case.
+
+Output: `{listId, hostId, owner, gen, round, questions:[{key, taskId, created}]}`. Re-running `push` with the same round is safe (`created:false`), even if the local pushlog was lost: existing questions are adopted by their footer key.
 
 ## `pull` output
 ```json
@@ -38,17 +40,19 @@ Output: `{listId, hostId, owner, gen, round, questions:[{key, taskId, created}]}
       "desc": "…", "descChanged": false, "answerText": "", "signal": "tick", "ingested": false } ],
   "truncated": false }
 ```
+The host is read from `GET /project/{listId}/data` (as `wait` does on every poll), so a deleted host note is exit 6.
+
 `signal` ∈ `none | tick | text | tick+text | other-only | done | wontdo | missing` (mechanical; see `ingest.md` for meaning). Questions are sorted by key and include earlier rounds.
 
-`ingested` (every question, including `missing` ones): `true` once a previous `close` set this question to answered (`answered` → status 2) or won't-do (`wontdo` → status −1); `reopen` does not set it. `false` when unknown; a `missing` question can never be closed, so its flag never changes — ignore it (see `ingest.md`). It lives in the local pushlog, so on another machine it reads `false`. A closed question keeps its `tick`/`text` signal, so use `ingested`, not `status`, to tell a consumed answer from a new one.
+`ingested` (every question, including `missing` ones): `true` once a previous `close` set this question to answered (`answered` → status 2) or won't-do (`wontdo` → status −1); `reopen` does not set it. `drop` sets it for a `missing` question. `false` when unknown. It lives in the local pushlog, so on another machine it reads `false`. A closed question keeps its `tick`/`text` signal, so use `ingested`, not `status`, to tell a consumed answer from a new one.
 
 `truncated:true` = the 200-task filter cap was hit. Warn the user and continue with what you got; questions beyond the cap are invisible until older ones are archived via `finish`.
 
 ## `close` stdin / output
-stdin `{"answered": ["r2.1"], "wontdo": ["r2.3"], "reopen": ["r2.2"]}` (each optional) → `{closed, wontdo, reopened, skipped}`. A key that appears in more than one of `answered` / `wontdo` / `reopen` is a usage error (exit 2) — every key you send must be unique across the whole call. A key `close` can't resolve to a task lands in `skipped`, not an error. Status-only writes (2 / −1 / 0); descriptions and items are never rewritten. Every key actually set to 2 or −1 is recorded as ingested (see `pull`).
+stdin `{"answered": ["r2.1"], "wontdo": ["r2.3"], "reopen": ["r2.2"], "drop": ["r2.4"]}` (each optional) → `{closed, wontdo, reopened, dropped, skipped}`. A key that appears in more than one of `answered` / `wontdo` / `reopen` / `drop` is a usage error (exit 2) — every key you send must be unique across the whole call. A key `close` can't resolve to a task lands in `skipped`, not an error. Status-only writes (2 / −1 / 0); descriptions and items are never rewritten. Every key actually set to 2 or −1 is recorded as ingested (see `pull`). `drop` is for `missing` (deleted) questions: each such key is recorded as ingested with **no** TickTick write and listed in `dropped`; a `drop` key that is not currently `missing` lands in `skipped`.
 
-## `takeover` → `{owner, gen, created, listId, hostId}` — creates folder/list/host/tag when missing.
-## `wait` → `{reason: "all" | "settled", …full pull output…}`; exit 3 / 4 / 6 as above. It judges only the **current round's** questions (`key` starts with `r<host.round>.`) with `ingested:false`: `all` = every one of them is final (answered / `done` / `wontdo` / `missing`); `settled` = at least one is answered or `other-only` and nothing changed for `--settle`. Earlier rounds never end a wait. Defaults `--every 3m --settle 10m --grace 90s --max 24h`; every duration must be > 0 (exit 2 otherwise).
+## `takeover` → `{owner, gen, created, listId, hostId}` — creates folder/list/host/tag when missing. If the host has no readable state block, `round` is rebuilt as the highest `r<N>` among its questions' footer keys (0 if none).
+## `wait` → `{reason: "all" | "settled", …full pull output…}`; exit 3 / 4 / 6 as above. It judges only the **current round's** questions (`key` starts with `r<host.round>.`) with `ingested:false`: `all` = every one of them is final (answered / `done` / `wontdo` / `missing`); `settled` = at least one is answered or `other-only` and nothing changed for `--settle`. Earlier rounds never end a wait. Each poll is one tag filter + one `GET /project/{listId}/data` (the host is read from there; a deleted host → exit 6). Defaults `--every 3m --settle 10m --grace 90s --max 24h`; every duration must be > 0 (exit 2 otherwise).
 ## `finish` → `{effort, listId, prose, decisions:[{key, title, signal, status, ticked, answerText}], archived: true}` — archives the list.
 ## `efforts` → `[{effort, listId, hostId, owner, round, open, answered}]`.
 ## `auth status` → `{ok: true, projects: N}`.
