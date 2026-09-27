@@ -120,6 +120,7 @@ test('auth prompt: success → exit 0, {ok, path}, token file written 0600', asy
   assert.equal(r.code, 0); assert.equal(r.json.ok, true); assert.ok(r.json.path.endsWith('.config/tt-grill/token'));
   assert.equal(readFileSync(r.json.path, 'utf8'), TOKEN + '\n');
   assert.equal(statSync(r.json.path).mode & 0o777, 0o600);
+  assert.ok(!r.err.includes(TOKEN));
 });
 
 test('no token → exit 5 pointing at tt-grill auth; nothing on stdout', async (t) => {

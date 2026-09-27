@@ -15,4 +15,6 @@ Each plugin lives under `plugins/<name>/`. Development files (tests, `package.js
 
 | Plugin | Description |
 |---|---|
-| _(none yet)_ | |
+| [grill-over-ticktick](plugins/grill-over-ticktick) | Relay /grill-me question rounds to TickTick; answer on your phone; Claude ingests and keeps grilling. Requires Node ≥ 20 and Matt Pocock's `mattpocock-skills` (for `grilling`). Run `/setup-ticktick` once. |
+
+Limitations: Not installable in claude.ai / Cowork (the plugin ships a `bin/` directory).

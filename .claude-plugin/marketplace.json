@@ -5,5 +5,7 @@
     "name": "bashycodes",
     "url": "https://github.com/bashycodes"
   },
-  "plugins": []
+  "plugins": [
+    { "name": "grill-over-ticktick", "source": "./plugins/grill-over-ticktick", "description": "Relay /grill-me rounds to TickTick and answer from your phone.", "category": "productivity" }
+  ]
 }
