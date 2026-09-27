@@ -31,5 +31,5 @@ export function fakeFetch(routes) {
   f.calls = calls;
   return f;
 }
-/** @param {number} status @param {unknown} json @returns {Reply} */
+/** @param {unknown} json @param {number} status @returns {Reply} */
 export const ok = (json, status = 200) => ({ status, json });
