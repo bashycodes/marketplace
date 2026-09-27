@@ -97,11 +97,28 @@ export function newOwner(random = Math.random) {
   return s;
 }
 
-/** @param {Api} api @param {Layout} layout */
-async function loadHost(api, layout) {
-  const task = await api.get(`/project/${layout.listId}/task/${layout.hostId}`);
+/**
+ * Read the host from `/project/{listId}/data` (not the single-task GET, which still returns a
+ * deleted task) so a host deleted in TickTick is a clean not-found (exit 6).
+ * @param {Api} api @param {Layout} layout @param {string} effort
+ */
+async function loadHost(api, layout, effort) {
+  const data = await api.get(`/project/${layout.listId}/data`);
+  const task = (data?.tasks ?? []).find((/** @type {any} */ t) => t.id === layout.hostId);
+  if (!task) throw notFound(`host "${hostTitle(effort)}" is gone from TickTick`, { effort });
   const { prose, state } = readBlock(task.content);
   return { task, prose, state };
+}
+
+/**
+ * One filter call → footer key → taskId for this host's children (first task wins per key).
+ * @param {Api} api @param {Layout} layout @returns {Promise<Map<string, string>>}
+ */
+async function childKeys(api, layout) {
+  /** @type {any[]} */ const tasks = (await api.post('/task/filter', { projectIds: [layout.listId], tag: [TAG] })) ?? [];
+  /** @type {Map<string, string>} */ const out = new Map();
+  for (const t of tasks) { if (t.parentId !== layout.hostId) continue; const k = parseDesc(t.desc).key; if (k && !out.has(k)) out.set(k, t.id); }
+  return out;
 }
 
 /** @param {Api} api @param {Layout} layout @param {string} prose @param {HostState} state */
@@ -117,7 +134,7 @@ function assertOwner(state, owner, effort) {
 
 /**
  * Resolve an effort to its layout, or throw not-found (exit 6). `ctx.layout` short-circuits
- * the three GETs so `wait` can resolve once and then poll with one filter + one host GET.
+ * the three GETs so `wait` can resolve once and then poll with one filter + one `/data` GET.
  * @param {{ api: Api, effort: string, layout?: Layout }} ctx
  * @returns {Promise<Layout>}
  */
@@ -170,9 +187,12 @@ async function fetchQuestions(ctx, layout) {
 export async function takeover(ctx) {
   const layout = await ensureLayout(ctx.api, ctx.effort);
   await ensureTag(ctx.api);
-  const { prose, state } = await loadHost(ctx.api, layout);
+  const { prose, state } = await loadHost(ctx.api, layout, ctx.effort);
+  // No readable state block (wiped/edited on the phone): rebuild `round` from the highest
+  // r<N> among the host's children so push's round guard still has a floor.
+  const round = state ? state.round : Math.max(0, ...[...(await childKeys(ctx.api, layout)).keys()].map((k) => Number(k.slice(1).split('.')[0])));
   const owner = newOwner(ctx.random);
-  const next = { v: /** @type {1} */ (1), owner, gen: (state?.gen ?? 0) + 1, round: state?.round ?? 0 };
+  const next = { v: /** @type {1} */ (1), owner, gen: (state?.gen ?? 0) + 1, round };
   // Last-write-wins: the server ignores etags, so a concurrent takeover between the GET
   // above and this write is clobbered (accepted risk per spec).
   await writeHost(ctx.api, layout, prose.trim() ? prose : hostTitle(ctx.effort), next);
@@ -190,26 +210,32 @@ export async function push(args) {
   // (not found) rather than silently getting a fresh layout, and the owner check below must
   // run before any write.
   const layout = await requireLayout(args);
-  const { state } = await loadHost(args.api, layout);
+  const { state } = await loadHost(args.api, layout, args.effort);
   assertOwner(state, args.owner, args.effort);
+  const hostRound = state?.round ?? 0;
+  if (round.round < hostRound) throw usage(`round ${round.round} is behind the host (round ${hostRound})`);
+
+  // Guards and adoption lookups run before any write.
+  const pushlog = createPushlog({ dir: args.pushlogDir, listId: layout.listId });
+  const entries = await pushlog.load();
+  // Footer key → taskId for the host's children, needed whenever some key has no taskId in
+  // the pushlog (crash between create and log line, or the pushlog file is gone entirely).
+  /** @type {Map<string, string>} */ const existing = round.questions.some((q) => !entries.get(q.key)?.taskId) ? await childKeys(args.api, layout) : new Map();
+  if (round.round > hostRound) {
+    const reused = round.questions.find((q) => entries.get(q.key)?.taskId || existing.has(q.key));
+    if (reused) throw usage(`key ${reused.key} already exists in TickTick; a new round must use new keys`);
+  }
   await ensureTag(args.api);
   const next = { v: /** @type {1} */ (1), owner: args.owner, gen: state?.gen ?? 0, round: round.round };
   // Last-write-wins: the server ignores etags, so a concurrent takeover between the GET
   // above and this write is clobbered (accepted risk per spec).
   await writeHost(args.api, layout, renderHostProse({ effort: args.effort, host: round.host }), next);
 
-  const pushlog = createPushlog({ dir: args.pushlogDir, listId: layout.listId });
-  const entries = await pushlog.load();
-  /** @type {Map<string, string>} */ const existing = new Map();
-  if (round.questions.some((q) => entries.get(q.key)?.taskId === null)) {
-    /** @type {any[]} */ const tasks = (await args.api.post('/task/filter', { projectIds: [layout.listId], tag: [TAG] })) ?? [];
-    for (const t of tasks) { if (t.parentId !== layout.hostId) continue; const k = parseDesc(t.desc).key; if (k && !existing.has(k)) existing.set(k, t.id); }
-  }
   /** @type {{ key: string, taskId: string, created: boolean }[]} */ const questions = [];
   for (const q of round.questions) {
     const e = entries.get(q.key);
     if (e?.taskId) { questions.push({ key: q.key, taskId: e.taskId, created: false }); continue; }
-    const adopted = e ? existing.get(q.key) : undefined;
+    const adopted = existing.get(q.key);
     if (adopted) { await pushlog.created(q.key, adopted); questions.push({ key: q.key, taskId: adopted, created: false }); continue; }
     await pushlog.creating(q.key);
     const t = await args.api.post('/task', {
@@ -228,7 +254,7 @@ export async function push(args) {
  */
 export async function pull(ctx) {
   const layout = await requireLayout(ctx);
-  const { task, prose, state } = await loadHost(ctx.api, layout);
+  const { task, prose, state } = await loadHost(ctx.api, layout, ctx.effort);
   const { questions, truncated } = await fetchQuestions(ctx, layout);
   return {
     host: { id: task.id, etag: task.etag ?? null, owner: state?.owner ?? null, gen: state?.gen ?? 0, round: state?.round ?? 0, body: task.content ?? '', prose },
@@ -238,27 +264,28 @@ export async function pull(ctx) {
 
 /**
  * @param {Ctx & { owner: string, input: unknown }} args
- * @returns {Promise<{ closed: string[], wontdo: string[], reopened: string[], skipped: string[] }>}
+ * @returns {Promise<{ closed: string[], wontdo: string[], reopened: string[], dropped: string[], skipped: string[] }>}
  */
 export async function close(args) {
   const inp = /** @type {any} */ (args.input);
-  if (!inp || typeof inp !== 'object') throw usage('close JSON: expected {answered?, wontdo?, reopen?}');
+  if (!inp || typeof inp !== 'object') throw usage('close JSON: expected {answered?, wontdo?, reopen?, drop?}');
   const list = (/** @type {string} */ name) => { const v = inp[name]; if (v === undefined) return /** @type {string[]} */ ([]); if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) throw usage(`close JSON: ${name} must be an array of keys`); return v; };
-  const answered = list('answered'), wontdo = list('wontdo'), reopen = list('reopen');
+  const answered = list('answered'), wontdo = list('wontdo'), reopen = list('reopen'), drop = list('drop');
   /** @type {Set<string>} */ const seenKeys = new Set();
-  for (const key of [...answered, ...wontdo, ...reopen]) {
+  for (const key of [...answered, ...wontdo, ...reopen, ...drop]) {
     if (seenKeys.has(key)) throw usage(`close JSON: key ${key} appears more than once`);
     seenKeys.add(key);
   }
   const layout = await requireLayout(args);
-  const { state } = await loadHost(args.api, layout);
+  const { state } = await loadHost(args.api, layout, args.effort);
   assertOwner(state, args.owner, args.effort);
   // Resolve key → taskId the same way pull does: footer key first, pushlog reverse-lookup
   // as fallback. The pushlog alone is not enough — it can be lost (other machine, wiped
   // state dir) while the footer on the task itself survives.
   const { questions } = await fetchQuestions(args, layout);
   const byKey = new Map(questions.filter((q) => q.signal !== 'missing').map((q) => [q.key, q]));
-  const out = { closed: /** @type {string[]} */ ([]), wontdo: /** @type {string[]} */ ([]), reopened: /** @type {string[]} */ ([]), skipped: /** @type {string[]} */ ([]) };
+  const missing = new Set(questions.filter((q) => q.signal === 'missing').map((q) => q.key));
+  const out = { closed: /** @type {string[]} */ ([]), wontdo: /** @type {string[]} */ ([]), reopened: /** @type {string[]} */ ([]), dropped: /** @type {string[]} */ ([]), skipped: /** @type {string[]} */ ([]) };
   const pushlog = createPushlog({ dir: args.pushlogDir, listId: layout.listId });
   /** @param {string[]} keys @param {number} status @param {string[]} into */
   const apply = async (keys, status, into) => {
@@ -275,6 +302,13 @@ export async function close(args) {
   await apply(answered, 2, out.closed);
   await apply(wontdo, -1, out.wontdo);
   await apply(reopen, 0, out.reopened);
+  // drop: a question deleted in TickTick (`missing`) is consumed locally — no API write, just
+  // the `ingested` line, so `wait` stops counting it and the skill never re-pushes it.
+  for (const key of drop) {
+    if (!missing.has(key)) { out.skipped.push(key); continue; }
+    await pushlog.ingested(key);
+    out.dropped.push(key);
+  }
   return out;
 }
 
@@ -284,7 +318,7 @@ export async function close(args) {
  */
 export async function finish(ctx) {
   const layout = await requireLayout(ctx);
-  const { prose } = await loadHost(ctx.api, layout);
+  const { prose } = await loadHost(ctx.api, layout, ctx.effort);
   const { questions } = await fetchQuestions(ctx, layout);
   const decisions = questions.filter((q) => q.signal !== 'missing').map((q) => ({ key: q.key, title: q.title, signal: q.signal, status: q.status, ticked: q.items.filter((i) => i.ticked && !i.isOther).map((i) => i.title.replace(/^⭐ /, '')), answerText: q.answerText }));
   await archiveList(ctx.api, layout.listId);
@@ -300,7 +334,7 @@ export async function efforts(args) {
   /** @type {{ effort: string, listId: string, hostId: string, owner: string | null, round: number, open: number, answered: number }[]} */ const out = [];
   for (const l of lists) {
     const layout = { groupId: '', listId: l.listId, columnId: null, hostId: l.hostId, created: false };
-    const { state } = await loadHost(args.api, layout);
+    const { state } = await loadHost(args.api, layout, l.effort);
     const { questions } = await fetchQuestions({ ...args, effort: l.effort }, layout);
     out.push({ effort: l.effort, listId: l.listId, hostId: l.hostId, owner: state?.owner ?? null, round: state?.round ?? 0,
       open: questions.filter((q) => q.signal === 'none' || q.signal === 'other-only').length,

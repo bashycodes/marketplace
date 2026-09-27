@@ -237,7 +237,7 @@ test('close: status-only writes for answered/wontdo/reopen; unknown keys skipped
   const p = await push({ ...ctx, owner, round: structuredClone(ROUND) });
   const before = tt.calls.length;
   const r = await close({ ...ctx, owner, input: { answered: ['r2.1'], wontdo: ['r2.2'], reopen: ['r9.9'] } });
-  assert.deepEqual(r, { closed: ['r2.1'], wontdo: ['r2.2'], reopened: [], skipped: ['r9.9'] });
+  assert.deepEqual(r, { closed: ['r2.1'], wontdo: ['r2.2'], reopened: [], dropped: [], skipped: ['r9.9'] });
   const writes = tt.calls.slice(before).filter((c) => c.method === 'POST' && c.path !== '/task/filter');
   assert.deepEqual(writes.map((c) => c.body), [{ id: p.questions[0].taskId, projectId: p.listId, status: 2 }, { id: p.questions[1].taskId, projectId: p.listId, status: -1 }]);
   assert.equal(tt.find(p.questions[0].taskId).status, 2);
@@ -306,4 +306,88 @@ test('close marks answered/wontdo keys ingested in the pushlog (not reopen, not 
   tt.deleteTask(p.questions[1].taskId);
   r = await pull(ctx);
   assert.deepEqual(r.questions.map((q) => [q.key, q.signal, q.ingested]), [['r2.1', 'done', true], ['r2.2', 'missing', true], ['r2.3', 'none', false]]);
+});
+
+test('close drop: a missing key is consumed with no API write → dropped; a non-missing key in drop → skipped', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner, listId } = await takeover(ctx);
+  const p = await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  tt.deleteTask(p.questions[1].taskId);
+  const before = tt.calls.length;
+  const r = await close({ ...ctx, owner, input: { drop: ['r2.2'] } });
+  assert.deepEqual(r, { closed: [], wontdo: [], reopened: [], dropped: ['r2.2'], skipped: [] });
+  assert.ok(!tt.calls.slice(before).some((c) => c.method === 'POST' && c.path !== '/task/filter'));
+  assert.ok(readFileSync(join(ctx.pushlogDir, `${listId}.log`), 'utf8').endsWith('ingested r2.2\n'));
+  const pl = await pull(ctx);
+  assert.deepEqual(pl.questions.map((q) => [q.key, q.signal, q.ingested]), [['r2.1', 'none', false], ['r2.2', 'missing', true]]);
+  const r2 = await close({ ...ctx, owner, input: { drop: ['r2.1', 'r9.9'] } });
+  assert.deepEqual([r2.dropped, r2.skipped], [[], ['r2.1', 'r9.9']]);
+  assert.equal((await pull(ctx)).questions[0].ingested, false);
+  await assert.rejects(close({ ...ctx, owner, input: { answered: ['r2.1'], drop: ['r2.1'] } }), (/** @type {any} */ e) => e.exitCode === 2 && /appears more than once/.test(e.message));
+  await assert.rejects(close({ ...ctx, owner, input: { drop: 'r2.2' } }), (/** @type {any} */ e) => e.exitCode === 2);
+});
+
+test('host deleted from TickTick → pull/push/close/finish exit 6 naming the host', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner, hostId } = await takeover(ctx);
+  const layout = { groupId: '', listId: tt.find(hostId).projectId, columnId: null, hostId, created: false };
+  await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  tt.deleteTask(hostId);
+  const is6 = (/** @type {any} */ e) => e.exitCode === 6 && /host "📍 e" is gone from TickTick/.test(e.message);
+  // with a pre-resolved layout (what `wait` uses) the read of the host itself must fail
+  await assert.rejects(pull(ctx), (/** @type {any} */ e) => e.exitCode === 6);
+  for (const f of [() => pull({ ...ctx, layout }), () => push({ ...ctx, layout, owner, round: structuredClone(ROUND) }), () => close({ ...ctx, layout, owner, input: {} }), () => finish({ ...ctx, layout })]) await assert.rejects(f(), is6);
+  assert.ok(!tt.calls.some((c) => c.method === 'GET' && /\/project\/[^/]+\/task\//.test(c.path)), 'host is read via /project/{id}/data, never the single-task GET');
+});
+
+test('push refuses a round behind the host (exit 2) and a new round reusing an existing key (exit 2); same round stays idempotent', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner, listId } = await takeover(ctx);
+  await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  const posts = () => tt.calls.filter((c) => c.method === 'POST' && c.path !== '/task/filter').length;
+  let before = posts();
+  await assert.rejects(push({ ...ctx, owner, round: { ...structuredClone(ROUND), round: 1, questions: [{ ...ROUND.questions[0], key: 'r1.1' }] } }), (/** @type {any} */ e) => e.exitCode === 2 && /round 1 is behind the host \(round 2\)/.test(e.message));
+  assert.equal(posts(), before);
+  await assert.rejects(push({ ...ctx, owner, round: { ...structuredClone(ROUND), round: 3 } }), (/** @type {any} */ e) => e.exitCode === 2 && /key r2\.1 already exists in TickTick; a new round must use new keys/.test(e.message));
+  assert.equal(posts(), before);
+  // pushlog lost → the footer still catches the reuse
+  const { rmSync } = await import('node:fs');
+  rmSync(join(ctx.pushlogDir, `${listId}.log`));
+  await assert.rejects(push({ ...ctx, owner, round: { ...structuredClone(ROUND), round: 3 } }), (/** @type {any} */ e) => e.exitCode === 2 && /already exists/.test(e.message));
+  assert.equal(posts(), before);
+  const r = await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  assert.deepEqual(r.questions.map((q) => q.created), [false, false]);
+});
+
+test('takeover on a host whose state block was wiped rebuilds round from the children footer keys', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner, hostId } = await takeover(ctx);
+  await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  tt.find(hostId).content = 'someone rewrote the host';
+  const b = await takeover({ ...ctx, random: () => 0.9 });
+  assert.deepEqual(readBlock(tt.find(hostId).content).state, { v: 1, owner: b.owner, gen: 1, round: 2 });
+  assert.equal(readBlock(tt.find(hostId).content).prose, 'someone rewrote the host');
+});
+
+test('push after the pushlog file is lost adopts every existing question by footer and rebuilds the log', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner, listId } = await takeover(ctx);
+  const first = await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  const { rmSync } = await import('node:fs');
+  rmSync(join(ctx.pushlogDir, `${listId}.log`));
+  const n = tt.db.tasks.length;
+  const r = await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  assert.deepEqual(r.questions, first.questions.map((q) => ({ ...q, created: false })));
+  assert.equal(tt.db.tasks.length, n);
+  assert.equal(readFileSync(join(ctx.pushlogDir, `${listId}.log`), 'utf8'), first.questions.map((q) => `${q.key} ${q.taskId}\n`).join(''));
+});
+
+test('pull reports truncated:true when the tag filter returns the 200-task cap', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner, listId, hostId } = await takeover(ctx);
+  await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  for (let i = 0; i < 198; i++) tt.db.tasks.push({ id: `seed${i}`, projectId: listId, parentId: hostId, title: `s${i}`, kind: 'CHECKLIST', status: 0, tags: ['grill'], etag: 'z', desc: buildDesc({ key: `r1.${i + 1}`, context: 'c', rec: { label: 'a', why: 'w' } }) });
+  const r = await pull(ctx);
+  assert.equal(r.truncated, true);
+  assert.equal(r.questions.length, 200);
 });

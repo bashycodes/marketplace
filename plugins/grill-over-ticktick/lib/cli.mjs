@@ -19,7 +19,7 @@ export const HELP = `tt-grill — relay grilling rounds to TickTick (JSON in/out
   tt-grill takeover --effort E        → {owner, gen, created, listId, hostId}
   tt-grill push --effort E --owner O  stdin: round JSON → {listId, hostId, owner, gen, round, questions}
   tt-grill pull --effort E            → {host, questions, truncated}
-  tt-grill close --effort E --owner O stdin: {answered, wontdo, reopen} → {closed, wontdo, reopened, skipped}
+  tt-grill close --effort E --owner O stdin: {answered, wontdo, reopen, drop} → {closed, wontdo, reopened, dropped, skipped}
   tt-grill wait --effort E --owner O [--every ${DEFAULTS.every}] [--settle ${DEFAULTS.settle}] [--grace ${DEFAULTS.grace}] [--max ${DEFAULTS.max}]
   tt-grill finish --effort E          → {effort, listId, prose, decisions, archived}
 
@@ -127,7 +127,7 @@ export async function main(argv, io = {}) {
         const effort = need('effort'); const owner = need('owner');
         const every = parseDuration(values.every ?? DEFAULTS.every), settle = parseDuration(values.settle ?? DEFAULTS.settle), grace = parseDuration(values.grace ?? DEFAULTS.grace), max = parseDuration(values.max ?? DEFAULTS.max);
         const api = await withToken();
-        const layout = await requireLayout({ api, effort });   // resolve once; each poll is then one filter + one host GET
+        const layout = await requireLayout({ api, effort });   // resolve once; each poll is then one filter + one /data GET
         result = await wait({ pull: () => pull({ api, effort, pushlogDir, log, layout }), owner, every, settle, grace, max, now, sleep, log });
         break;
       }

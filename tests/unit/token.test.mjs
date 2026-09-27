@@ -53,6 +53,29 @@ test('writeToken tightens a pre-existing looser directory to 0700', async (t) =>
   assert.equal(statSync(join(home, '.config', 'tt-grill')).mode & 0o777, 0o700);
 });
 
+test('writeToken chmods a pre-existing token file to 0600 before writing the new token', async (t) => {
+  const home = tmpDir(t);
+  const fsp = await import('node:fs/promises');
+  const p = tokenPath(home);
+  mkdirSync(join(home, '.config', 'tt-grill'), { recursive: true });
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync(p, 'old\n'); chmodSync(p, 0o644);
+  /** @type {string[]} */ const ops = [];
+  const rec = /** @type {any} */ ({
+    mkdir: fsp.mkdir,
+    readFile: fsp.readFile,
+    chmod: async (/** @type {string} */ f, /** @type {number} */ m) => { if (f === p) ops.push(`chmod ${m.toString(8)} mode=${(statSync(f).mode & 0o777).toString(8)}`); return fsp.chmod(f, m); },
+    writeFile: async (/** @type {string} */ f, /** @type {string} */ d, /** @type {any} */ o) => { if (f === p) ops.push(`write mode=${(statSync(f).mode & 0o777).toString(8)}`); return fsp.writeFile(f, d, o); },
+  });
+  await writeToken({ home, token: 'new', fs: rec });
+  assert.deepEqual(ops, ['chmod 600 mode=644', 'write mode=600', 'chmod 600 mode=600']);
+  assert.equal(readFileSync(p, 'utf8'), 'new\n');
+  // a fresh home (no file yet) still works: the pre-write chmod tolerates ENOENT
+  const home2 = tmpDir(t);
+  await writeToken({ home: home2, token: 'x' });
+  assert.equal(statSync(tokenPath(home2)).mode & 0o777, 0o600);
+});
+
 /** @returns {any} */
 function fakeTty() {
   const s = /** @type {any} */ (new EventEmitter());

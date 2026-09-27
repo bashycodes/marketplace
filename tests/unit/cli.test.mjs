@@ -198,16 +198,31 @@ test('wait: answered → exit 0 reason all; takeover mid-wait → 3; --max → 4
   r = await run(['wait', '--effort', 'e', '--owner', r.ejson.owner, '--every', '1s', '--max', '3s']); assert.equal(r.code, 4); assert.equal(r.out, '');
 });
 
-test('wait polls cost one filter + one host GET each', async (t) => {
+test('wait polls cost one filter + one /project/{id}/data GET each', async (t) => {
   const { run, tt } = await harness(t);
   let r = await run(['takeover', '--effort', 'e']); const owner = r.json.owner;
   await run(['push', '--effort', 'e', '--owner', owner], JSON.stringify(ROUND));
   const start = tt.calls.length;
   r = await run(['wait', '--effort', 'e', '--owner', owner, '--every', '1s', '--max', '3s']); assert.equal(r.code, 4); assert.equal(r.out, '');
   const polls = tt.calls.slice(start).filter((c) => c.path === '/task/filter').length;
-  const gets = tt.calls.slice(start).filter((c) => c.method === 'GET' && /\/task\//.test(c.path)).length;
-  assert.equal(polls, 4); assert.equal(gets, 4); // initial + 3 polls
+  const data = tt.calls.slice(start).filter((c) => c.method === 'GET' && /^\/project\/[^/]+\/data$/.test(c.path)).length;
+  assert.equal(polls, 4); assert.equal(data, 1 + 4); // 1 layout resolve + initial + 3 polls
+  assert.ok(!tt.calls.slice(start).some((c) => c.method === 'GET' && /\/task\//.test(c.path)));
   assert.equal(tt.calls.slice(start).filter((c) => c.path === '/project/group').length, 1);
+});
+
+test('wait: host deleted mid-wait → exit 6', async (t) => {
+  const tt = fakeTickTick();
+  let n = 0; let hostId = '';
+  // delete the host just before the second poll's /data read (1st /data = layout resolve, 2nd = initial pull)
+  const f = /** @type {typeof fetch} */ (async (url, init) => { if (/\/project\/[^/]+\/data$/.test(new URL(String(url)).pathname) && hostId && ++n === 3) tt.deleteTask(hostId); return tt.fetch(url, init); });
+  const { run } = await harness(t, { fetch: f });
+  let r = await run(['takeover', '--effort', 'e']); const owner = r.json.owner;
+  r = await run(['push', '--effort', 'e', '--owner', owner], JSON.stringify(ROUND)); assert.equal(r.code, 0);
+  hostId = r.json.hostId;
+  r = await run(['wait', '--effort', 'e', '--owner', owner, '--every', '1s', '--max', '1m']);
+  assert.equal(r.code, 6); assert.equal(r.out, ''); assert.match(r.ejson.message, /host "📍 e" is gone from TickTick/);
+  assert.equal(n, 3);
 });
 
 test('help', async (t) => {

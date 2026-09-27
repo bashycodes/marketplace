@@ -34,6 +34,9 @@ export async function writeToken({ home, token, fs = nodeFs }) {
   const p = tokenPath(home);
   await fs.mkdir(dirname(p), { recursive: true, mode: 0o700 });
   await fs.chmod(dirname(p), 0o700);
+  // writeFile's `mode` applies only on create: tighten an existing (possibly looser) file first,
+  // so the new token is never written into a world-readable file.
+  try { await fs.chmod(p, 0o600); } catch (/** @type {any} */ err) { if (err?.code !== 'ENOENT') throw err; }
   await fs.writeFile(p, token.trim() + '\n', { mode: 0o600 });
   await fs.chmod(p, 0o600);
   return p;
