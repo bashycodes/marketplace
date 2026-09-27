@@ -1,0 +1,48 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/open/v1/task",
+    "body": {
+      "title": "zz-tt-grill-spike-task-in-col",
+      "projectId": "6ab672358f08ffc311cfda4f",
+      "columnId": "6ab672378f08d994cf4ca5b5"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Date": "Fri, 25 Sep 2026 13:08:31 GMT",
+      "Content-Type": "application/json;charset=UTF-8",
+      "Transfer-Encoding": "chunked",
+      "Connection": "close",
+      "Set-Cookie": "<scrubbed>",
+      "Vary": "origin,access-control-request-method,access-control-request-headers,accept-encoding",
+      "X-Frame-Options": "DENY",
+      "Strict-Transport-Security": "max-age=31536000 ; includeSubDomains",
+      "X-Content-Type-Options": "nosniff",
+      "X-XSS-Protection": "1; mode=block",
+      "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0"
+    },
+    "body": {
+      "id": "6ab6724f8f086a6e1671987e",
+      "projectId": "6ab672358f08ffc311cfda4f",
+      "sortOrder": -1099511627776,
+      "title": "zz-tt-grill-spike-task-in-col",
+      "timeZone": "Asia/Jerusalem",
+      "isAllDay": false,
+      "priority": 0,
+      "isFloating": false,
+      "status": 0,
+      "tags": [],
+      "columnId": "6ab672378f08d994cf4ca5b5",
+      "columnName": "zz-tt-grill-spike-col-todo",
+      "etag": "4q2m4yd9",
+      "etimestamp": 1790341711397,
+      "kind": "TEXT",
+      "modifiedTime": "2026-09-25T13:08:31.394+0000",
+      "createdTime": "2026-09-25T13:08:31.394+0000"
+    }
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/open/v1/project/{pid}/task/{tid}",
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Date": "Fri, 25 Sep 2026 13:10:00 GMT",
+      "Content-Type": "application/json;charset=UTF-8",
+      "Transfer-Encoding": "chunked",
+      "Connection": "close",
+      "Set-Cookie": "<scrubbed>",
+      "Vary": "origin,access-control-request-method,access-control-request-headers,accept-encoding",
+      "X-Frame-Options": "DENY",
+      "Strict-Transport-Security": "max-age=31536000 ; includeSubDomains",
+      "X-Content-Type-Options": "nosniff",
+      "X-XSS-Protection": "1; mode=block",
+      "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0"
+    },
+    "body": {
+      "id": "6ab672a58f087177091fc0b7",
+      "projectId": "6ab672198f087177091fad1a",
+      "sortOrder": -3298534883328,
+      "title": "zz-tt-grill-spike-checklist-9a",
+      "timeZone": "Asia/Jerusalem",
+      "isAllDay": false,
+      "priority": 0,
+      "isFloating": false,
+      "completedTime": "2026-09-25T13:09:59.435+0000",
+      "status": 2,
+      "items": [
+        {
+          "id": "6ab672a58f087177091fc0b8",
+          "status": 0,
+          "title": "9a-1",
+          "sortOrder": 0,
+          "isAllDay": false,
+          "timeZone": "Asia/Jerusalem"
+        },
+        {
+          "id": "6ab672a58f087177091fc0b9",
+          "status": 1,
+          "title": "9a-2",
+          "sortOrder": 0,
+          "isAllDay": false,
+          "timeZone": "Asia/Jerusalem"
+        },
+        {
+          "id": "6ab672a58f087177091fc0ba",
+          "status": 0,
+          "title": "9a-3",
+          "sortOrder": 0,
+          "isAllDay": false,
+          "timeZone": "Asia/Jerusalem"
+        }
+      ],
+      "etag": "fon2owsp",
+      "etimestamp": 1790341799437,
+      "kind": "CHECKLIST",
+      "modifiedTime": "2026-09-25T13:09:59.437+0000",
+      "createdTime": "2026-09-25T13:09:57.608+0000"
+    }
+  }
+}

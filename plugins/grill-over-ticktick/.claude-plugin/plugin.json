@@ -1,0 +1,7 @@
+{
+  "name": "grill-over-ticktick",
+  "description": "Relay /grill-me question rounds to TickTick and answer them from your phone; Claude ingests the answers and keeps grilling.",
+  "author": { "name": "bashycodes", "url": "https://github.com/bashycodes" },
+  "license": "MIT",
+  "keywords": ["grilling", "ticktick", "productivity"]
+}

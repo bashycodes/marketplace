@@ -1,0 +1,10 @@
+#!/usr/bin/env node
+'use strict';
+Promise.all([import('node:path'), import('node:url'), import('node:fs')])
+  .then(([path, url, fs]) => {
+    const self = fs.realpathSync(process.argv[1]);
+    return import(url.pathToFileURL(path.join(path.dirname(self), '..', 'lib', 'cli.mjs')).href);
+  })
+  .then((m) => m.main(process.argv.slice(2)))
+  .then((code) => { process.exitCode = code; })
+  .catch((err) => { process.stderr.write(JSON.stringify({ error: 'internal', message: String((err && err.message) || err) }) + '\n'); process.exitCode = 1; });

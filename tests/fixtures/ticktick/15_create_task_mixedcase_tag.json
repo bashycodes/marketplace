@@ -1,0 +1,50 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/open/v1/task",
+    "body": {
+      "title": "zz-tt-grill-spike-tagged-mixedcase",
+      "projectId": "6ab672198f087177091fad1a",
+      "tags": [
+        "zz-tt-grill-spike-TagZ"
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Date": "Fri, 25 Sep 2026 13:11:07 GMT",
+      "Content-Type": "application/json;charset=UTF-8",
+      "Transfer-Encoding": "chunked",
+      "Connection": "close",
+      "Set-Cookie": "<scrubbed>",
+      "Vary": "origin,access-control-request-method,access-control-request-headers,accept-encoding",
+      "X-Frame-Options": "DENY",
+      "Strict-Transport-Security": "max-age=31536000 ; includeSubDomains",
+      "X-Content-Type-Options": "nosniff",
+      "X-XSS-Protection": "1; mode=block",
+      "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0"
+    },
+    "body": {
+      "id": "6ab672eb8f08d994cf4cbd1f",
+      "projectId": "6ab672198f087177091fad1a",
+      "sortOrder": -12094627905536,
+      "title": "zz-tt-grill-spike-tagged-mixedcase",
+      "timeZone": "Asia/Jerusalem",
+      "isAllDay": false,
+      "priority": 0,
+      "isFloating": false,
+      "status": 0,
+      "tags": [
+        "zz-tt-grill-spike-tagz"
+      ],
+      "etag": "5l75dc0l",
+      "etimestamp": 1790341867685,
+      "kind": "TEXT",
+      "modifiedTime": "2026-09-25T13:11:07.684+0000",
+      "createdTime": "2026-09-25T13:11:07.684+0000"
+    }
+  }
+}
