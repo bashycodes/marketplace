@@ -26,7 +26,7 @@ Both `/grill-with-ticktick` and `/grill-from-ticktick` follow this procedure and
 | In TickTick | `signal` | Treat as |
 |---|---|---|
 | one non-Other item ticked | `tick` | the answer (item title without the `⭐ ` prefix) |
-| description changed | `text` | the answer is `answerText` (text after `✍️ Answer:`); empty `answerText` (`""`) = context edited, not answered → unanswered: `wontdo` it and re-ask under a new key next round; `null` = the marker/footer is gone — read `desc` and infer; if you cannot, treat it as a re-ask case |
+| description changed | `text` | the answer is `answerText` (text after `✍️ Answer:`, up to but excluding the `Next →` link line); empty `answerText` (`""`) = context edited, not answered → unanswered: `wontdo` it and re-ask under a new key next round; `null` = the marker/footer is gone — read `desc` and infer; if you cannot, treat it as a re-ask case |
 | both | `tick+text` | the text is the answer; ticks are context |
 | several items ticked | `tick` | read them together; if they contradict → re-ask case: old key in `wontdo`, re-ask under a new key next round with a one-line note |
 | Other ticked, nothing typed | `other-only` | unanswered; leave open (do **not** close) |

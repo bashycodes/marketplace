@@ -14,7 +14,7 @@ An effort name must match `^[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,58}[A-Za-z0-9._-])?$
 - Only `takeover` creates the folder/list/host/tag when they are missing. `push`, `pull`, `close`, `wait` and `finish` all resolve an existing layout and fail with exit 6 (not found) if the effort was never taken over or its host note was deleted. The host is always read via `GET /project/{listId}/data` (never the single-task GET, which still returns deleted tasks); `pull` and every `wait` poll use it. Always `takeover` before the first `push` for an effort. `takeover` never converts a list the user already had: if a list with the effort's name exists in `Claude` without a `📍 <effort>` host and is not empty, it exits 2 (`list "<E>" exists in folder Claude but is not a tt-grill list; rename it or pick another effort`); an empty one is adopted.
 
 ## Question format
-- `title` = the question, ≤ 80 chars.
+- `title` = `[i/N] <question>`: `i` = the question's 1-based position in the round's `questions`, `N` = their count (e.g. `[2/3] Which columns does a phase-2 map list get?`), so sorting the smart list by name shows the round in order. The round JSON `title` (without the prefix) is ≤ 80 chars; the stored title may exceed 80 by the prefix.
 - `desc` (exactly):
   ```
   <1–3 lines of context>
@@ -23,9 +23,12 @@ An effort name must match `^[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,58}[A-Za-z0-9._-])?$
 
   ✍️ Answer:
 
+  Next → [[i+1/N] <next title>](https://ticktick.com/webapp/#p/<listId>/tasks/<nextTaskId>)
+
   ⌁ <key> <hash>
   ```
-  `<key>` = `r<round>.<n>`; `<hash>` = first 8 hex of SHA-256 over the normalised text above the footer (CRLF→LF, trailing whitespace stripped, trailing blank lines dropped, and backslash-escapes TickTick inserts around markdown-special punctuation stripped before hashing). `pull` recomputes it: mismatch or missing footer ⇒ `descChanged: true` ⇒ the user typed something.
+  The `Next →` line links to the next question of the round; the last question links back to the host: `Next → [📍 <effort>](https://ticktick.com/webapp/#p/<listId>/tasks/<hostId>)`. Because each desc needs the next task's id, `push` creates a round's questions last-first. (The link's field is the `LINK_FIELD` constant in `lib/desc.mjs`, currently `desc`; if it is flipped to `content`, the desc has no `Next →` line and the task's `content` is that line alone.)
+  `<key>` = `r<round>.<n>`; `<hash>` = first 8 hex of SHA-256 over the normalised text above the footer (the `Next →` line included) (CRLF→LF, trailing whitespace stripped, trailing blank lines dropped, and backslash-escapes TickTick inserts around markdown-special punctuation stripped before hashing). `pull` recomputes it: mismatch or missing footer ⇒ `descChanged: true` ⇒ the user typed something. `answerText` = the text between `✍️ Answer:` and the `Next →` line (or the footer when there is no `Next →` line).
 - `items` = `⭐ <recommended>` first, then the other options in the given order, then `Other → type after ✍️`.
 
 ## Host body

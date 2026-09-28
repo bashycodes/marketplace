@@ -11,6 +11,7 @@ Setup
 Round trip
 - [ ] `/grill-with-ticktick acc-<date>` on a small topic: the host note `📍 acc-<date>` sits in column `📍`, questions are subtasks tagged `grill`, items show ⭐ first and `Other → type after ✍️` last.
 - [ ] Tick one item on the phone → laptop `wait` returns `settled` after ~10 min of quiet or `all` once every question is answered; Claude reports the exact answer.
+- [ ] Sort 🔥 Grill inbox by title: the round's questions show in order (`[1/N] …`, `[2/N] …`); each question's `Next →` link opens the next one and the last opens the host note `📍 acc-<date>` (if the link does not render on the phone, flip `LINK_FIELD` in `lib/desc.mjs` to `content`).
 - [ ] Tick-only answers show `descChanged:false` in `tt-grill pull` (the app's re-serialisation is not an edit).
 - [ ] Type after `✍️ Answer:` → ingested as text; the ticks are mentioned as context.
 - [ ] Tick `Other` only → stays open; Claude does not treat it as answered.
