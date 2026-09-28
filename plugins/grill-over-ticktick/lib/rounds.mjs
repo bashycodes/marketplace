@@ -1,5 +1,5 @@
 import { findLayout, ensureLayout, ensureTag, listEfforts, archiveList, TAG } from './layout.mjs';
-import { buildDesc, parseDesc, buildItems, classifyItems, KEY_RE, OTHER_TITLE, REC_PREFIX } from './desc.mjs';
+import { buildDesc, parseDesc, buildItems, classifyItems, KEY_RE, OTHER_TITLE, REC_PREFIX, LINK_FIELD, nextLine, taskUrl, prefixTitle, parseTitlePrefix } from './desc.mjs';
 import { readBlock, writeBlock, renderHostProse, hostTitle, isValidEffort, EFFORT_RULE } from './state.mjs';
 import { createPushlog } from './pushlog.mjs';
 import { usage, notFound, takenOver, serverId } from './errors.mjs';
@@ -13,7 +13,8 @@ import { usage, notFound, takenOver, serverId } from './errors.mjs';
 /** @typedef {'none'|'tick'|'text'|'tick+text'|'other-only'|'done'|'wontdo'|'missing'|'unknown'} Signal */
 /* `unknown`: in the pushlog but absent from a truncated filter (≥ 200 tasks) — it may still exist; leave it alone. */
 /** @typedef {ReturnType<typeof classifyItems>} Items */
-/** @typedef {{ key: string, taskId: string, etag: string | null, status: number | null, title: string | null, items: Items, desc: string | null, descChanged: boolean, answerText: string | null, signal: Signal, ingested: boolean }} PulledQuestion */
+/** @typedef {{ key: string, taskId: string, etag: string | null, status: number | null, title: string | null, position: number | null, total: number | null, items: Items, desc: string | null, descChanged: boolean, answerText: string | null, signal: Signal, ingested: boolean }} PulledQuestion */
+/* `title`: as stored (with the `[i/N] ` prefix push adds); `position`/`total`: parsed from that prefix, null when absent (older tasks). */
 /* `ingested`: the pushlog has an `ingested <key>` line, i.e. a previous `close` set this question to answered (2) or won't-do (−1). False when unknown. */
 /** @typedef {{ host: { id: string, etag: string | null, owner: string | null, gen: number, round: number, body: string, prose: string, hasBlock: boolean }, questions: PulledQuestion[], truncated: boolean }} PullResult */
 /** @typedef {{ api: Api, effort: string, pushlogDir: string, log: Logger, random?: () => number, layout?: Layout }} Ctx */
@@ -53,7 +54,9 @@ export function validateRound(input) {
     if (options.includes(OTHER_TITLE)) throw fail(`${at}.options must not equal the reserved Other item`);
     if (!q.rec || typeof q.rec.label !== 'string' || typeof q.rec.why !== 'string') throw fail(`${at}.rec must be {label, why}`);
     if (!options.includes(q.rec.label)) throw fail(`${at}.rec.label must be one of options`);
-    const desc = buildDesc({ key: q.key, context: q.context, rec: q.rec });
+    // Measure with a worst-case Next link (longest label, 64-char ids) so the cap holds for what push sends.
+    const next = { label: prefixTitle(q.title, r.questions.length, r.questions.length), url: taskUrl('x'.repeat(64), 'x'.repeat(64)) };
+    const desc = buildDesc({ key: q.key, context: q.context, rec: q.rec, next });
     if (desc.length > MAX_TEXT) throw fail(`${at} desc exceeds ${MAX_TEXT} chars`);
     return { key: q.key, title: q.title, context: q.context, rec: { label: q.rec.label, why: q.rec.why }, options };
   });
@@ -184,7 +187,7 @@ async function fetchQuestions(ctx, layout) {
     if (!key) { ctx.log.debug(`ignoring unkeyed task ${t.id}`); continue; }
     const items = classifyItems(t.items);
     const descChanged = parsed.changed || parsed.key !== key;
-    const q = { key, taskId: t.id, etag: t.etag ?? null, status: t.status ?? 0, title: t.title ?? null, items, desc: t.desc ?? null, descChanged, answerText: parsed.answerText, signal: signalFor({ status: t.status ?? 0, items, descChanged }), ingested: entries.get(key)?.ingested ?? false };
+    const q = { key, taskId: t.id, etag: t.etag ?? null, status: t.status ?? 0, title: t.title ?? null, ...parseTitlePrefix(t.title), items, desc: t.desc ?? null, descChanged, answerText: parsed.answerText, signal: signalFor({ status: t.status ?? 0, items, descChanged }), ingested: entries.get(key)?.ingested ?? false };
     const prev = byKey.get(key);
     if (prev) { ctx.log.warn(`duplicate question ${key}: ${prev.taskId} and ${t.id}`); if (entries.get(key)?.taskId !== t.id) continue; }
     byKey.set(key, q);
@@ -192,7 +195,7 @@ async function fetchQuestions(ctx, layout) {
   // A truncated filter cannot prove absence: a pushlog key it did not return may still be live.
   const truncated = tasks.length >= FILTER_CAP;
   for (const [key, e] of entries) {
-    if (e.taskId && !byKey.has(key)) byKey.set(key, { key, taskId: e.taskId, etag: null, status: null, title: null, items: [], desc: null, descChanged: false, answerText: null, signal: truncated ? 'unknown' : 'missing', ingested: e.ingested });
+    if (e.taskId && !byKey.has(key)) byKey.set(key, { key, taskId: e.taskId, etag: null, status: null, title: null, position: null, total: null, items: [], desc: null, descChanged: false, answerText: null, signal: truncated ? 'unknown' : 'missing', ingested: e.ingested });
   }
   const questions = [...byKey.values()].sort((a, b) => compareKeys(a.key, b.key));
   return { questions, truncated };
@@ -253,21 +256,34 @@ export async function push(args) {
   // the write is still clobbered (accepted risk per spec).
   await writeHost(args.api, layout, renderHostProse({ effort: args.effort, host: round.host }), next, fresh.trailing);
 
-  /** @type {{ key: string, taskId: string, created: boolean }[]} */ const questions = [];
-  for (const q of round.questions) {
+  // Titles get an `[i/N] ` prefix so a name-sorted list shows the round in order. Each desc links
+  // to the NEXT question (the last one back to the host), so questions are created last-first:
+  // the next task's id must exist before its predecessor's desc is written. Existing/adopted
+  // questions keep their desc as-is (never rewritten).
+  const n = round.questions.length;
+  /** @type {string[]} */ const ids = new Array(n);
+  /** @type {boolean[]} */ const made = new Array(n).fill(false);
+  for (let i = n - 1; i >= 0; i--) {
+    const q = round.questions[i];
     const e = entries.get(q.key);
-    if (e?.taskId) { questions.push({ key: q.key, taskId: e.taskId, created: false }); continue; }
+    if (e?.taskId) { ids[i] = e.taskId; continue; }
     const adopted = existing.get(q.key);
-    if (adopted) { await pushlog.created(q.key, adopted); questions.push({ key: q.key, taskId: adopted, created: false }); continue; }
+    if (adopted) { await pushlog.created(q.key, adopted); ids[i] = adopted; continue; }
+    const next = i === n - 1
+      ? { label: hostTitle(args.effort), url: taskUrl(layout.listId, layout.hostId) }
+      : { label: prefixTitle(round.questions[i + 1].title, i + 2, n), url: taskUrl(layout.listId, ids[i + 1]) };
     await pushlog.creating(q.key);
     const t = await args.api.post('/task', {
-      title: q.title, projectId: layout.listId, parentId: layout.hostId, kind: 'CHECKLIST',
-      desc: buildDesc(q), items: buildItems(q.options, q.rec.label), tags: [TAG],
+      title: prefixTitle(q.title, i + 1, n), projectId: layout.listId, parentId: layout.hostId, kind: 'CHECKLIST',
+      desc: buildDesc({ ...q, next: LINK_FIELD === 'desc' ? next : null }),
+      ...(LINK_FIELD === 'content' ? { content: nextLine(next) } : {}),
+      items: buildItems(q.options, q.rec.label), tags: [TAG],
     }, { retry: false });   // never re-send a create: a re-run of push adopts it by footer
     serverId(t?.id, 'task');   // before the id reaches the pushlog
     await pushlog.created(q.key, t.id);
-    questions.push({ key: q.key, taskId: t.id, created: true });
+    ids[i] = t.id; made[i] = true;
   }
+  const questions = round.questions.map((q, i) => ({ key: q.key, taskId: ids[i], created: made[i] }));
   return { listId: layout.listId, hostId: layout.hostId, owner: args.owner, gen: next.gen, round: round.round, questions };
 }
 

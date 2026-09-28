@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalise, hashText, buildDesc, parseDesc, buildItems, classifyItems, OTHER_TITLE, KEY_RE } from '../../plugins/grill-over-ticktick/lib/desc.mjs';
+import { normalise, hashText, buildDesc, parseDesc, buildItems, classifyItems, OTHER_TITLE, KEY_RE, prefixTitle, parseTitlePrefix, taskUrl, LINK_FIELD } from '../../plugins/grill-over-ticktick/lib/desc.mjs';
 
 const Q = { key: 'r2.1', context: 'Where does the token live?\nTwo options matter.', rec: { label: '~/.config/tt-grill/token', why: 'survives uninstall' } };
 
@@ -102,4 +102,37 @@ test('typed answer after the marker still gives changed:true with the text even 
 
 test('normalise strips TickTick-style backslash escapes around markdown punctuation', () => {
   assert.equal(normalise('a \\(b\\) \\*c\\*'), 'a (b) *c*');
+});
+
+const NEXT = { label: '[2/3] Which columns does a phase-2 map list get?', url: taskUrl('p1', 't9') };
+
+test('buildDesc with next: link line sits between the marker and the footer, covered by the hash', () => {
+  const d = buildDesc({ ...Q, next: NEXT });
+  const body = 'Where does the token live?\nTwo options matter.\n\n⭐ Recommended: ~/.config/tt-grill/token — survives uninstall\n\n✍️ Answer:\n\nNext → [[2/3] Which columns does a phase-2 map list get?](https://ticktick.com/webapp/#p/p1/tasks/t9)';
+  assert.equal(d, `${body}\n\n⌁ r2.1 ${hashText(body)}`);
+  assert.deepEqual([parseDesc(d).changed, parseDesc(d).answerText, parseDesc(d).key], [false, '', 'r2.1']);
+  assert.equal(parseDesc(d.replace('t9)', 't8)')).changed, true);   // editing the link is an edit
+  assert.equal(LINK_FIELD, 'desc');
+});
+
+test('parseDesc: answerText stops at the Next line (typed above it is captured, the link is not)', () => {
+  const d = buildDesc({ ...Q, next: NEXT });
+  const typed = d.replace('✍️ Answer:\n', '✍️ Answer:\nenv only\nsecond line\n');
+  assert.deepEqual([parseDesc(typed).changed, parseDesc(typed).answerText], [true, 'env only\nsecond line']);
+  assert.equal(parseDesc(d.replace('✍️ Answer:', '✍️ Answer: file')).answerText, 'file');
+});
+
+test('Next link survives TickTick markdown escaping: not an edit, answerText empty', () => {
+  const d = buildDesc({ ...Q, next: NEXT });
+  const lines = d.split('\n'); const footer = lines.pop();
+  const escaped = lines.join('\n').replace(/[()[\]#.\-]/g, (c) => `\\${c}`) + '\n' + footer;
+  assert.deepEqual([parseDesc(escaped).changed, parseDesc(escaped).answerText], [false, '']);
+});
+
+test('prefixTitle / parseTitlePrefix', () => {
+  assert.equal(prefixTitle('Which columns?', 2, 3), '[2/3] Which columns?');
+  assert.deepEqual(parseTitlePrefix('[2/3] Which columns?'), { position: 2, total: 3 });
+  assert.deepEqual(parseTitlePrefix('\\[12/30\\] x'), { position: 12, total: 30 });
+  assert.deepEqual(parseTitlePrefix('Which columns?'), { position: null, total: null });
+  assert.deepEqual(parseTitlePrefix(null), { position: null, total: null });
 });

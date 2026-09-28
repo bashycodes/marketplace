@@ -8,7 +8,7 @@ import { body } from '../helpers/fixtures.mjs';
 import { createApi } from '../../plugins/grill-over-ticktick/lib/api.mjs';
 import { createLogger } from '../../plugins/grill-over-ticktick/lib/log.mjs';
 import { readBlock, writeBlock } from '../../plugins/grill-over-ticktick/lib/state.mjs';
-import { parseDesc, classifyItems, OTHER_TITLE, buildDesc, REC_PREFIX } from '../../plugins/grill-over-ticktick/lib/desc.mjs';
+import { parseDesc, classifyItems, OTHER_TITLE, buildDesc, REC_PREFIX, LINK_FIELD, taskUrl } from '../../plugins/grill-over-ticktick/lib/desc.mjs';
 import { validateRound, compareKeys, signalFor, newOwner, takeover, push, pull, close, finish, efforts, ANSWERED } from '../../plugins/grill-over-ticktick/lib/rounds.mjs';
 
 const ROUND = {
@@ -50,6 +50,8 @@ test('validateRound: accepts the sample; rejects each broken field with exit 2',
   bad((r) => { r.host = null; }, /host/);
   bad((r) => { r.host.goal = 'x'.repeat(99990); }, /host body exceeds 100000/);
   assert.throws(() => validateRound('nope'), (/** @type {any} */ e) => e.exitCode === 2);
+  const max = structuredClone(ROUND); max.questions[0].title = 'x'.repeat(80);
+  assert.equal(validateRound(max).questions[0].title.length, 80);   // the 80-char cap is on the original title; push's [i/N] prefix may exceed it
 });
 
 test('compareKeys orders numerically', () => {
@@ -105,11 +107,21 @@ test('push: writes host body first, creates questions one at a time with desc/it
   assert.equal(prose, '📍 e\n\nGoal: ship\n\nDecided\n- file (r1.2)\n\nOpen\n- r2.1 where — ⭐ file\n- r2.2 how — ⭐ env\n\nNot asked yet\n- ci');
   assert.deepEqual(state, { v: 1, owner, gen: 1, round: 2 });
   const q1 = tt.find(r.questions[0].taskId);
-  assert.deepEqual([q1.kind, q1.parentId, q1.projectId, q1.tags, q1.title], ['CHECKLIST', hostId, listId, ['grill'], 'Where does the token live?']);
+  const q2 = tt.find(r.questions[1].taskId);
+  assert.deepEqual([q1.kind, q1.parentId, q1.projectId, q1.tags, q1.title], ['CHECKLIST', hostId, listId, ['grill'], '[1/2] Where does the token live?']);
+  assert.equal(q2.title, '[2/2] How is it read?');
   assert.deepEqual(q1.items.map((/** @type {any} */ i) => i.title), ['⭐ file', 'env', OTHER_TITLE]);
-  assert.equal(q1.desc, buildDesc(ROUND.questions[0]));
-  assert.equal(parseDesc(q1.desc).key, 'r2.1');
-  assert.equal(readFileSync(join(ctx.pushlogDir, `${listId}.log`), 'utf8'), `creating r2.1\nr2.1 ${q1.id}\ncreating r2.2\nr2.2 ${r.questions[1].taskId}\n`);
+  assert.equal(LINK_FIELD, 'desc');
+  // each desc links to the next question; the last one back to the host note
+  assert.equal(q1.desc, buildDesc({ ...ROUND.questions[0], next: { label: '[2/2] How is it read?', url: taskUrl(listId, q2.id) } }));
+  assert.equal(q2.desc, buildDesc({ ...ROUND.questions[1], next: { label: '📍 e', url: taskUrl(listId, hostId) } }));
+  assert.ok(q1.desc.includes(`\n\nNext → [[2/2] How is it read?](https://ticktick.com/webapp/#p/${listId}/tasks/${q2.id})\n\n⌁ r2.1 `));
+  assert.ok(q2.desc.includes(`Next → [📍 e](https://ticktick.com/webapp/#p/${listId}/tasks/${hostId})`));
+  assert.deepEqual([parseDesc(q1.desc).key, parseDesc(q1.desc).changed, parseDesc(q1.desc).answerText], ['r2.1', false, '']);
+  // created last-first (so the next id exists), returned in key order
+  const creates = tt.calls.slice(start).filter((c) => c.method === 'POST' && c.path === '/task').map((c) => c.body.title);
+  assert.deepEqual(creates, ['[2/2] How is it read?', '[1/2] Where does the token live?']);
+  assert.equal(readFileSync(join(ctx.pushlogDir, `${listId}.log`), 'utf8'), `creating r2.2\nr2.2 ${q2.id}\ncreating r2.1\nr2.1 ${q1.id}\n`);
 });
 
 test('push is idempotent: re-run creates nothing, returns created:false, never re-sends items/desc', async (t) => {
@@ -188,6 +200,8 @@ test('pull: classification of every phone action, sorted by key, host state, tru
   assert.deepEqual(r.questions.map((q) => [q.key, q.signal]), [['r2.1', 'tick'], ['r2.2', 'text'], ['r2.3', 'other-only'], ['r2.4', 'done'], ['r2.5', 'wontdo'], ['r2.6', 'missing'], ['r2.7', 'none']]);
   assert.equal(r.questions[1].answerText, 'env, laptop shared'); assert.equal(r.questions[1].descChanged, true);
   assert.equal(r.questions[6].descChanged, false);
+  assert.deepEqual(r.questions.map((q) => [q.title, q.position, q.total]).slice(0, 3), [['[1/7] Where does the token live?', 1, 7], ['[2/7] How is it read?', 2, 7], ['[3/7] t3', 3, 7]]);
+  assert.deepEqual([r.questions[5].title, r.questions[5].position, r.questions[5].total], [null, null, null]);
   assert.deepEqual(r.questions[0].items[0], { title: '⭐ file', ticked: true, isRec: true, isOther: false });
   assert.equal(r.questions[5].taskId, id('r2.6')); assert.equal(r.questions[5].etag, null);
   assert.deepEqual({ owner: r.host.owner, gen: r.host.gen, round: r.host.round }, { owner, gen: 1, round: 2 });
@@ -242,7 +256,7 @@ test('close: status-only writes for answered/wontdo/reopen; unknown keys skipped
   const writes = tt.calls.slice(before).filter((c) => c.method === 'POST' && c.path !== '/task/filter');
   assert.deepEqual(writes.map((c) => c.body), [{ id: p.questions[0].taskId, projectId: p.listId, status: 2 }, { id: p.questions[1].taskId, projectId: p.listId, status: -1 }]);
   assert.equal(tt.find(p.questions[0].taskId).status, 2);
-  assert.equal(tt.find(p.questions[0].taskId).desc, buildDesc(ROUND.questions[0])); // desc untouched
+  assert.equal(tt.find(p.questions[0].taskId).desc, buildDesc({ ...ROUND.questions[0], next: { label: '[2/2] How is it read?', url: taskUrl(p.listId, p.questions[1].taskId) } })); // desc untouched
   await assert.rejects(close({ ...ctx, owner: 'o_other', input: { answered: ['r2.1'] } }), (/** @type {any} */ e) => e.exitCode === 3);
   await assert.rejects(close({ ...ctx, owner, input: { answered: 'r2.1' } }), (/** @type {any} */ e) => e.exitCode === 2);
   const r2 = await close({ ...ctx, owner, input: { reopen: ['r2.1'] } });
@@ -382,7 +396,7 @@ test('push after the pushlog file is lost adopts every existing question by foot
   const r = await push({ ...ctx, owner, round: structuredClone(ROUND) });
   assert.deepEqual(r.questions, first.questions.map((q) => ({ ...q, created: false })));
   assert.equal(tt.db.tasks.length, n);
-  assert.equal(readFileSync(join(ctx.pushlogDir, `${listId}.log`), 'utf8'), first.questions.map((q) => `${q.key} ${q.taskId}\n`).join(''));
+  assert.equal(readFileSync(join(ctx.pushlogDir, `${listId}.log`), 'utf8'), [...first.questions].reverse().map((q) => `${q.key} ${q.taskId}\n`).join(''));
 });
 
 test('pull reports truncated:true when the tag filter returns the 200-task cap', async (t) => {
@@ -408,7 +422,7 @@ test('server ids are validated at the boundary: a task id with a newline never r
   const ctx = { api: createApi({ fetch: evil, token: 'T', log, sleep: async () => {} }), effort: 'e', pushlogDir: tmpDir(t), log, random: () => 0.1 };
   const { owner, listId } = await takeover(ctx);
   await assert.rejects(push({ ...ctx, owner, round: structuredClone(ROUND) }), (/** @type {any} */ e) => e.exitCode === 1 && /unexpected id from server/.test(e.message));
-  assert.equal(readFileSync(join(ctx.pushlogDir, `${listId}.log`), 'utf8'), 'creating r2.1\n');
+  assert.equal(readFileSync(join(ctx.pushlogDir, `${listId}.log`), 'utf8'), 'creating r2.2\n');
 });
 
 test('a malicious list id from the server is rejected before it is used in a path or URL', async (t) => {
@@ -531,4 +545,32 @@ test('close re-checks the owner right before its host prose write: a takeover du
   await assert.rejects(close({ ...ctx, owner, input: { answered: ['r2.1'], host } }), (/** @type {any} */ e) => e.exitCode === 3);
   assert.equal(readBlock(tt.find(hostId).content).state?.owner, 'o_other');
   assert.equal(tt.find(p.questions[0].taskId).status, 0);
+});
+
+test('pull: a question title without the [i/N] prefix (older task) → position/total null', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner } = await takeover(ctx);
+  const p = await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  tt.find(p.questions[0].taskId).title = 'Where does the token live?';
+  tt.find(p.questions[1].taskId).title = '\\[2/2\\] How is it read?';   // server-escaped prefix still parses
+  const r = await pull(ctx);
+  assert.deepEqual(r.questions.map((q) => [q.title, q.position, q.total]), [['Where does the token live?', null, null], ['\\[2/2\\] How is it read?', 2, 2]]);
+});
+
+test('push: untouched descs with the Next link read descChanged:false; an answer typed above the Next line is captured; re-push idempotent', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner } = await takeover(ctx);
+  const three = structuredClone(ROUND);
+  three.questions.push({ key: 'r2.3', title: 't3', context: 'c', rec: { label: 'a', why: 'w' }, options: ['a', 'b'] });
+  const p = await push({ ...ctx, owner, round: three });
+  let r = await pull(ctx);
+  assert.deepEqual(r.questions.map((q) => [q.descChanged, q.signal, q.answerText]), [[false, 'none', ''], [false, 'none', ''], [false, 'none', '']]);
+  const id2 = p.questions[1].taskId;
+  tt.editDesc(id2, tt.find(id2).desc.replace('✍️ Answer:\n', '✍️ Answer:\nenv only\n'));
+  r = await pull(ctx);
+  assert.deepEqual([r.questions[1].signal, r.questions[1].answerText], ['text', 'env only']);
+  const before = tt.calls.length;
+  const again = await push({ ...ctx, owner, round: structuredClone(three) });
+  assert.deepEqual(again.questions, p.questions.map((q) => ({ ...q, created: false })));
+  assert.ok(!tt.calls.slice(before).some((c) => c.method === 'POST' && c.path === '/task'));
 });
