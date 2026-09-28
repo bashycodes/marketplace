@@ -1,4 +1,4 @@
-import { authError, notFound, apiError } from './errors.mjs';
+import { authError, notFound, apiError, TtError } from './errors.mjs';
 import { redact } from './log.mjs';
 
 export const BASE_URL = 'https://api.ticktick.com/open/v1';
@@ -7,6 +7,35 @@ export const MAX_ATTEMPTS = 5;
 export const BASE_MS = 500;
 export const CAP_MS = 8000;
 export const TIMEOUT_MS = 20000;
+/** Largest response body accepted (the biggest legitimate body is ~480 KB). */
+export const MAX_BODY_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Read a response body with a hard size cap. Throws a TtError (never retried) past the cap;
+ * stream/abort failures propagate as plain errors (retried like a network error).
+ * @param {Response} res @param {string} where
+ * @returns {Promise<string>}
+ */
+export async function readCapped(res, where) {
+  const tooLarge = () => apiError(`response too large: ${where}`, { limit: MAX_BODY_BYTES });
+  const declared = Number(res.headers?.get?.('content-length') ?? NaN);
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) { try { await res.body?.cancel(); } catch { /* ignore */ } throw tooLarge(); }
+  const reader = res.body && typeof res.body.getReader === 'function' ? res.body.getReader() : null;
+  if (reader) {
+    /** @type {Uint8Array[]} */ const chunks = []; let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_BODY_BYTES) { try { await reader.cancel(); } catch { /* ignore */ } throw tooLarge(); }
+      chunks.push(value);
+    }
+    return Buffer.concat(chunks).toString('utf8');
+  }
+  const text = typeof res.arrayBuffer === 'function' ? Buffer.from(await res.arrayBuffer()).toString('utf8') : await res.text();
+  if (Buffer.byteLength(text, 'utf8') > MAX_BODY_BYTES) throw tooLarge();
+  return text;
+}
 
 /**
  * @param {number} attempt 1-based
@@ -52,8 +81,9 @@ export function createApi({ fetch, token, log, sleep = (ms) => new Promise((r) =
           body: body === undefined ? undefined : JSON.stringify(body),
           signal: AbortSignal.timeout(timeoutMs),
         });
-        text = await res.text();
+        text = await readCapped(res, where);
       } catch (err) {
+        if (err instanceof TtError) throw err;   // too large: a clean failure, not retried
         lastNote = clean(err instanceof Error ? err.message : String(err));
         log.debug(`network error on ${where} (attempt ${attempt}): ${lastNote}`);
         if (attempt < MAX_ATTEMPTS) { await sleep(backoffMs(attempt, random)); continue; }

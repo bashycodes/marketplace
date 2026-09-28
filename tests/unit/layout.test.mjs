@@ -96,3 +96,25 @@ test('listEfforts lists only open lists in Claude with a 📍 host; archiveList 
   assert.equal(tt.db.projects.find((p) => p.id === c.listId).closed, true);
   assert.deepEqual((await listEfforts(api)).map((x) => x.effort), ['a', 'b']);
 });
+
+test('ensureLayout refuses a non-empty list of the same name that has no 📍 host (exit 2, nothing written); an empty one is adopted', async () => {
+  const { tt, api } = setup();
+  const s = tt.seedEffort('e');
+  tt.db.tasks.length = 0; tt.db.columns.length = 0;
+  tt.db.tasks.push({ id: 'mine', projectId: s.listId, title: 'buy milk', kind: 'TEXT', status: 0, tags: [] });
+  const before = tt.calls.length;
+  await assert.rejects(ensureLayout(api, 'e'), (/** @type {any} */ e) => e.exitCode === 2 && e.message === 'list "e" exists in folder Claude but is not a tt-grill list; rename it or pick another effort');
+  assert.ok(tt.calls.slice(before).every((c) => c.method === 'GET'));
+  tt.db.tasks.length = 0;
+  const L = await ensureLayout(api, 'e');
+  assert.equal(L.listId, s.listId); assert.equal(tt.find(L.hostId).title, '📍 e');
+});
+
+test('listEfforts skips lists whose name is not a valid effort name', async () => {
+  const { tt, api } = setup();
+  tt.seedEffort('ok one'); tt.seedEffort('bad"$(x)"');
+  /** @type {string[]} */ const lines = [];
+  const log = createLogger({ stderr: /** @type {any} */ ({ write: (/** @type {string} */ s) => { lines.push(s); return true; } }), debug: true });
+  assert.deepEqual((await listEfforts(api, log)).map((x) => x.effort), ['ok one']);
+  assert.ok(lines.some((l) => /skipping list with an invalid effort name/.test(l)));
+});

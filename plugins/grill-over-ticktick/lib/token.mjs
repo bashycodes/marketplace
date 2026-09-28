@@ -2,7 +2,7 @@ import * as nodeFs from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { authError, usage, NO_TOKEN_MESSAGE, TtError, EXIT } from './errors.mjs';
 
-/** @typedef {Pick<typeof nodeFs, 'mkdir' | 'writeFile' | 'readFile' | 'chmod'>} TokenFs */
+/** @typedef {Pick<typeof nodeFs, 'mkdir' | 'writeFile' | 'readFile' | 'chmod' | 'lstat' | 'rename' | 'unlink'>} TokenFs */
 
 /** @param {string} home @returns {string} */
 export function tokenPath(home) { return join(home, '.config', 'tt-grill', 'token'); }
@@ -34,11 +34,22 @@ export async function writeToken({ home, token, fs = nodeFs }) {
   const p = tokenPath(home);
   await fs.mkdir(dirname(p), { recursive: true, mode: 0o700 });
   await fs.chmod(dirname(p), 0o700);
-  // writeFile's `mode` applies only on create: tighten an existing (possibly looser) file first,
-  // so the new token is never written into a world-readable file.
-  try { await fs.chmod(p, 0o600); } catch (/** @type {any} */ err) { if (err?.code !== 'ENOENT') throw err; }
-  await fs.writeFile(p, token.trim() + '\n', { mode: 0o600 });
-  await fs.chmod(p, 0o600);
+  // Never write through a symlink: the token would land in (and chmod) the link's target.
+  try {
+    if ((await fs.lstat(p)).isSymbolicLink()) throw usage(`refusing to write the token: ${p} is a symlink`);
+  } catch (/** @type {any} */ err) { if (err instanceof TtError || err?.code !== 'ENOENT') throw err; }
+  // Atomic replace: a fresh 0600 temp file (O_EXCL, so it is never a pre-planted file or link),
+  // then rename over the target. A crash mid-write leaves the old token intact.
+  const tmp = `${p}.tmp-${process.pid}`;
+  try { await fs.unlink(tmp); } catch (/** @type {any} */ err) { if (err?.code !== 'ENOENT') throw err; }
+  try {
+    await fs.writeFile(tmp, token.trim() + '\n', { flag: 'wx', mode: 0o600 });
+    await fs.chmod(tmp, 0o600);   // exact mode regardless of umask
+    await fs.rename(tmp, p);
+  } catch (err) {
+    try { await fs.unlink(tmp); } catch { /* already gone */ }
+    throw err;
+  }
   return p;
 }
 

@@ -1,6 +1,21 @@
 /** @typedef {{ v: 1, owner: string | null, gen: number, round: number }} HostState */
 /** @typedef {{ goal: string, decided: string[], open: string[], notAsked: string[] }} HostProse */
 
+import { usage } from './errors.mjs';
+
+/** Effort names end up in list titles and in shell commands the skills write, so the alphabet is closed. */
+export const EFFORT_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,59}$/;
+export const EFFORT_RULE = 'effort name must match ^[A-Za-z0-9][A-Za-z0-9 ._-]{0,59}$ (1-60 chars: letters, digits, space, dot, underscore, hyphen; starts with a letter or digit)';
+
+/** @param {unknown} effort @returns {boolean} */
+export function isValidEffort(effort) { return typeof effort === 'string' && EFFORT_RE.test(effort); }
+
+/** @param {unknown} effort @returns {string} */
+export function checkEffort(effort) {
+  if (!isValidEffort(effort)) throw usage(`invalid effort ${JSON.stringify(effort)}: ${EFFORT_RULE}`);
+  return /** @type {string} */ (effort);
+}
+
 const FENCE_OPEN = '```grill\n';
 const TAIL_RE = /^```grill\n([\s\S]*?)\n```\s*$/;
 

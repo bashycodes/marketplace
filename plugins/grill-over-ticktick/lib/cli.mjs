@@ -8,6 +8,7 @@ import { createApi } from './api.mjs';
 import { defaultStateDir } from './pushlog.mjs';
 import { takeover, push, pull, close, finish, efforts, requireLayout } from './rounds.mjs';
 import { wait, parseDuration, DEFAULTS } from './wait.mjs';
+import { checkEffort } from './state.mjs';
 
 export const COMMANDS = ['auth', 'efforts', 'push', 'pull', 'close', 'takeover', 'wait', 'finish'];
 
@@ -21,9 +22,10 @@ export const HELP = `tt-grill — relay grilling rounds to TickTick (JSON in/out
   tt-grill pull --effort E            → {host, questions, truncated}
   tt-grill close --effort E --owner O stdin: {answered, wontdo, reopen, drop} → {closed, wontdo, reopened, dropped, skipped}
   tt-grill wait --effort E --owner O [--every ${DEFAULTS.every}] [--settle ${DEFAULTS.settle}] [--grace ${DEFAULTS.grace}] [--max ${DEFAULTS.max}]
-  tt-grill finish --effort E          → {effort, listId, prose, decisions, archived}
+  tt-grill finish --effort E --owner O → {effort, listId, prose, decisions, archived}
 
 exit codes: 0 ok · 1 error · 2 usage · 3 taken over · 4 gave up waiting · 5 auth · 6 not found
+effort names: ^[A-Za-z0-9][A-Za-z0-9 ._-]{0,59}$
 env: TICKTICK_TOKEN (CI/cloud only), TT_GRILL_DEBUG=1, XDG_STATE_HOME
 `;
 
@@ -89,7 +91,7 @@ export async function main(argv, io = {}) {
     } else if (positionals.length) {
       throw usage(`unexpected argument: ${positionals[0]}`);
     }
-    const need = (/** @type {'effort' | 'owner'} */ name) => { const v = values[name]; if (!v) throw usage(`--${name} is required for ${cmd}`); return v; };
+    const need = (/** @type {'effort' | 'owner'} */ name) => { const v = values[name]; if (!v) throw usage(`--${name} is required for ${cmd}`); return name === 'effort' ? checkEffort(v) : v; };
     const readJson = async () => {
       if (stdin.isTTY) throw usage(`${cmd} expects JSON on stdin`);
       const text = await readStdin(stdin);
@@ -122,7 +124,7 @@ export async function main(argv, io = {}) {
       case 'push': { const effort = need('effort'); const owner = need('owner'); const round = await readJson(); result = await push({ api: await withToken(), effort, owner, round, pushlogDir, log }); break; }
       case 'pull': { const effort = need('effort'); result = await pull({ api: await withToken(), effort, pushlogDir, log }); break; }
       case 'close': { const effort = need('effort'); const owner = need('owner'); const input = await readJson(); result = await close({ api: await withToken(), effort, owner, input, pushlogDir, log }); break; }
-      case 'finish': { const effort = need('effort'); result = await finish({ api: await withToken(), effort, pushlogDir, log }); break; }
+      case 'finish': { const effort = need('effort'); const owner = need('owner'); result = await finish({ api: await withToken(), effort, owner, pushlogDir, log }); break; }
       case 'wait': {
         const effort = need('effort'); const owner = need('owner');
         const every = parseDuration(values.every ?? DEFAULTS.every), settle = parseDuration(values.settle ?? DEFAULTS.settle), grace = parseDuration(values.grace ?? DEFAULTS.grace), max = parseDuration(values.max ?? DEFAULTS.max);

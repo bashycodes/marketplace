@@ -1,9 +1,14 @@
 import * as nodeFs from 'node:fs/promises';
 import { join } from 'node:path';
-import { TtError, EXIT, usage } from './errors.mjs';
+import { TtError, EXIT, ID_RE } from './errors.mjs';
 
 const KEY_RE = /^r\d+\.\d+$/;
-const TASK_ID_RE = /^[A-Za-z0-9_-]+$/;
+const TASK_ID_RE = ID_RE;
+
+/** An invariant broken inside tt-grill (bad key or id about to be logged), not a user mistake. */
+const bad = (/** @type {string} */ what, /** @type {unknown} */ v) => new TtError('pushlog_value', `pushlog: bad ${what} ${JSON.stringify(v)}`, EXIT.ERROR);
+/** @param {string} key */
+const checkKey = (key) => { if (typeof key !== 'string' || !KEY_RE.test(key)) throw bad('key', key); };
 
 /** @typedef {Pick<typeof nodeFs, 'mkdir' | 'appendFile' | 'readFile'>} LogFs */
 /** @typedef {{ taskId: string | null, ingested: boolean }} PushlogEntry */
@@ -23,6 +28,8 @@ export function defaultStateDir(env, home) {
  * @returns {Pushlog}
  */
 export function createPushlog({ dir, listId, fs = nodeFs }) {
+  // listId becomes a file name: only the server-id alphabet is allowed (no `/`, `..`, NUL).
+  if (typeof listId !== 'string' || !ID_RE.test(listId)) throw bad('listId', listId);
   const path = join(dir, `${listId}.log`);
   const append = async (/** @type {string} */ line) => {
     await fs.mkdir(dir, { recursive: true, mode: 0o700 });
@@ -30,11 +37,15 @@ export function createPushlog({ dir, listId, fs = nodeFs }) {
   };
   return {
     path,
-    creating: (key) => append(`creating ${key}`),
-    created: (key, taskId) => append(`${key} ${taskId}`),
+    creating: async (key) => { checkKey(key); await append(`creating ${key}`); },
+    created: async (key, taskId) => {
+      checkKey(key);
+      if (typeof taskId !== 'string' || !TASK_ID_RE.test(taskId)) throw bad('taskId', taskId);
+      await append(`${key} ${taskId}`);
+    },
     // `ingested <key>`: close set this question to 2 / −1 after the skill read its answer.
     ingested: async (key) => {
-      if (!KEY_RE.test(key)) throw usage(`pushlog: bad key "${key}"`);
+      checkKey(key);
       await append(`ingested ${key}`);
     },
     async load() {

@@ -43,7 +43,7 @@ test('ingested line: exact format, marks the key, survives later lines, keeps ta
   await log.creating('r1.1'); await log.created('r1.1', 'T1'); await log.ingested('r1.1'); await log.creating('r1.1');
   assert.equal(readFileSync(join(dir, 'L1.log'), 'utf8'), 'creating r1.1\nr1.1 T1\ningested r1.1\ncreating r1.1\n');
   assert.deepEqual(await log.load(), new Map([['r1.1', { taskId: 'T1', ingested: true }]]));
-  await assert.rejects(log.ingested('bogus'), (/** @type {any} */ e) => e.exitCode === 2);
+  await assert.rejects(log.ingested('bogus'), (/** @type {any} */ e) => e.exitCode === 1);
 });
 
 test('ingested before a created line is kept; ingested of an unknown key is recorded', async (t) => {
@@ -66,4 +66,17 @@ test('load rethrows non-ENOENT read errors as a pushlog_read TtError', async () 
     assert.equal(err.exitCode, 1);
     return true;
   });
+});
+
+test('createPushlog refuses a listId outside the server-id alphabet (no path traversal); created/creating/ingested assert shapes (exit 1)', async (t) => {
+  const dir = tmpDir(t);
+  for (const listId of ['../../../home/u/.bashrc#', 'a/b', '', 'x'.repeat(65), 'a\nb']) {
+    assert.throws(() => createPushlog({ dir, listId }), (/** @type {any} */ e) => e.exitCode === 1 && /bad listId/.test(e.message), listId);
+  }
+  const log = createPushlog({ dir, listId: 'L1' });
+  await assert.rejects(log.created('r1.1', 'abc\ningested r1.2'), (/** @type {any} */ e) => e.exitCode === 1 && /bad taskId/.test(e.message));
+  await assert.rejects(log.created('r1.1', 'a b'), (/** @type {any} */ e) => e.exitCode === 1);
+  await assert.rejects(log.created('x1', 'T1'), (/** @type {any} */ e) => e.exitCode === 1 && /bad key/.test(e.message));
+  await assert.rejects(log.creating('r1.1\ningested r1.2'), (/** @type {any} */ e) => e.exitCode === 1);
+  assert.deepEqual(await log.load(), new Map());
 });

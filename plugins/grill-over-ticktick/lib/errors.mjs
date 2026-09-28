@@ -46,3 +46,16 @@ export function toExit(err, secrets = []) {
   const message = err instanceof Error ? err.message : String(err);
   return { exitCode: EXIT.ERROR, json: { error: 'internal', message: redact(message, secrets) } };
 }
+
+/** Shape every TickTick id must have before it reaches a URL path, the pushlog path or a pushlog line. */
+export const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * Boundary check for an id returned by TickTick (exit 1 on anything else).
+ * @param {unknown} id @param {string} what
+ * @returns {string}
+ */
+export function serverId(id, what) {
+  if (typeof id !== 'string' || !ID_RE.test(id)) throw apiError('unexpected id from server', { what });
+  return id;
+}

@@ -122,3 +122,25 @@ test('backoffMs table', () => {
   assert.equal(backoffMs(1, () => 1), 625);          // +25 %
   assert.deepEqual([...RETRY_STATUSES].sort(), [429, 502, 503, 504]);
 });
+
+test('a body over 2 MiB → exit 1 "response too large", no retry (streamed body, no content-length)', async () => {
+  const { MAX_BODY_BYTES } = await import('../../plugins/grill-over-ticktick/lib/api.mjs');
+  assert.equal(MAX_BODY_BYTES, 2 * 1024 * 1024);
+  const { api, f, clock } = make([{ method: 'GET', path: '/project', reply: { status: 200, text: 'x'.repeat(MAX_BODY_BYTES + 1) } }]);
+  await assert.rejects(api.get('/project'), (/** @type {any} */ e) => e.exitCode === 1 && /response too large/.test(e.message));
+  assert.equal(f.calls.length, 1); assert.deepEqual(clock.sleeps, []);
+  // exactly at the cap is fine
+  const { api: api2 } = make([{ method: 'GET', path: '/project', reply: { status: 200, text: JSON.stringify('x'.repeat(MAX_BODY_BYTES - 2)) } }]);
+  assert.equal((await api2.get('/project')).length, MAX_BODY_BYTES - 2);
+});
+
+test('a declared content-length over 2 MiB is refused before reading; a stream-less response is capped too', async () => {
+  const { MAX_BODY_BYTES } = await import('../../plugins/grill-over-ticktick/lib/api.mjs');
+  const clock = fakeClock(); const log = createLogger({ stderr: /** @type {any} */ ({ write() { return true; } }) });
+  let n = 0;
+  /** @type {any} */ const declared = async () => { n++; return new Response('[]', { status: 200, headers: { 'content-length': String(MAX_BODY_BYTES + 1) } }); };
+  await assert.rejects(createApi({ fetch: declared, token: TOKEN, log, sleep: clock.sleep }).get('/project'), (/** @type {any} */ e) => e.exitCode === 1 && /response too large/.test(e.message));
+  assert.equal(n, 1);
+  /** @type {any} */ const noStream = async () => ({ ok: true, status: 200, headers: new Headers(), body: null, text: async () => 'x'.repeat(MAX_BODY_BYTES + 1) });
+  await assert.rejects(createApi({ fetch: noStream, token: TOKEN, log, sleep: clock.sleep }).get('/project'), (/** @type {any} */ e) => /response too large/.test(e.message));
+});

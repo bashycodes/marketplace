@@ -1,8 +1,8 @@
 import { findLayout, ensureLayout, ensureTag, listEfforts, archiveList, TAG } from './layout.mjs';
 import { buildDesc, parseDesc, buildItems, classifyItems, KEY_RE, OTHER_TITLE, REC_PREFIX } from './desc.mjs';
-import { readBlock, writeBlock, renderHostProse, hostTitle } from './state.mjs';
+import { readBlock, writeBlock, renderHostProse, hostTitle, isValidEffort, EFFORT_RULE } from './state.mjs';
 import { createPushlog } from './pushlog.mjs';
-import { usage, notFound, takenOver } from './errors.mjs';
+import { usage, notFound, takenOver, serverId } from './errors.mjs';
 
 /** @typedef {import('./api.mjs').Api} Api */
 /** @typedef {import('./log.mjs').Logger} Logger */
@@ -22,6 +22,8 @@ export const FILTER_CAP = 200;
 export const ANSWERED = new Set(/** @type {Signal[]} */ (['tick', 'text', 'tick+text']));
 export const TOUCHED = new Set(/** @type {Signal[]} */ ([...ANSWERED, 'other-only']));
 export const FINAL = new Set(/** @type {Signal[]} */ ([...ANSWERED, 'done', 'wontdo', 'missing']));
+/** @param {string} id */
+const enc = (id) => encodeURIComponent(id);
 const OWNER_ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567';
 
 /** @param {unknown} input @returns {Round} */
@@ -29,7 +31,7 @@ export function validateRound(input) {
   const fail = (/** @type {string} */ m) => usage(`round JSON: ${m}`);
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw fail('expected an object');
   const r = /** @type {any} */ (input);
-  if (typeof r.effort !== 'string' || !r.effort.trim()) throw fail('effort must be a non-empty string');
+  if (!isValidEffort(r.effort)) throw fail(`effort: ${EFFORT_RULE}`);
   if (!Number.isInteger(r.round) || r.round < 1) throw fail('round must be a positive integer');
   if (!r.host || typeof r.host !== 'object') throw fail('host must be an object {goal, decided, open, notAsked}');
   const host = { goal: typeof r.host.goal === 'string' ? r.host.goal : '', decided: strList(r.host.decided, 'host.decided'), open: strList(r.host.open, 'host.open'), notAsked: strList(r.host.notAsked, 'host.notAsked') };
@@ -103,7 +105,7 @@ export function newOwner(random = Math.random) {
  * @param {Api} api @param {Layout} layout @param {string} effort
  */
 async function loadHost(api, layout, effort) {
-  const data = await api.get(`/project/${layout.listId}/data`);
+  const data = await api.get(`/project/${enc(layout.listId)}/data`);
   const task = (data?.tasks ?? []).find((/** @type {any} */ t) => t.id === layout.hostId);
   if (!task) throw notFound(`host "${hostTitle(effort)}" is gone from TickTick`, { effort });
   const { prose, state } = readBlock(task.content);
@@ -117,13 +119,13 @@ async function loadHost(api, layout, effort) {
 async function childKeys(api, layout) {
   /** @type {any[]} */ const tasks = (await api.post('/task/filter', { projectIds: [layout.listId], tag: [TAG] })) ?? [];
   /** @type {Map<string, string>} */ const out = new Map();
-  for (const t of tasks) { if (t.parentId !== layout.hostId) continue; const k = parseDesc(t.desc).key; if (k && !out.has(k)) out.set(k, t.id); }
+  for (const t of tasks) { if (t.parentId !== layout.hostId) continue; const k = parseDesc(t.desc).key; if (k && !out.has(k)) out.set(k, serverId(t.id, 'task')); }
   return out;
 }
 
 /** @param {Api} api @param {Layout} layout @param {string} prose @param {HostState} state */
 async function writeHost(api, layout, prose, state) {
-  await api.post(`/task/${layout.hostId}`, { id: layout.hostId, projectId: layout.listId, content: writeBlock(prose, state) });
+  await api.post(`/task/${enc(layout.hostId)}`, { id: layout.hostId, projectId: layout.listId, content: writeBlock(prose, state) });
 }
 
 /** @param {HostState | null} state @param {string} owner @param {string} effort */
@@ -159,6 +161,7 @@ async function fetchQuestions(ctx, layout) {
   /** @type {Map<string, PulledQuestion>} */ const byKey = new Map();
   for (const t of tasks) {
     if (t.parentId !== layout.hostId) continue;
+    serverId(t.id, 'task');
     const parsed = parseDesc(t.desc);
     // The pushlog's own reverse lookup wins: it is what *this* CLI created this task for. The
     // footer key is only a fallback for taskIds the pushlog doesn't know (e.g. a pre-pushlog
@@ -242,6 +245,7 @@ export async function push(args) {
       title: q.title, projectId: layout.listId, parentId: layout.hostId, kind: 'CHECKLIST',
       desc: buildDesc(q), items: buildItems(q.options, q.rec.label), tags: [TAG],
     });
+    serverId(t?.id, 'task');   // before the id reaches the pushlog
     await pushlog.created(q.key, t.id);
     questions.push({ key: q.key, taskId: t.id, created: true });
   }
@@ -292,7 +296,7 @@ export async function close(args) {
     for (const key of keys) {
       const q = byKey.get(key);
       if (!q) { out.skipped.push(key); continue; }
-      await args.api.post(`/task/${q.taskId}`, { id: q.taskId, projectId: layout.listId, status });
+      await args.api.post(`/task/${enc(q.taskId)}`, { id: q.taskId, projectId: layout.listId, status });
       // Answered / won't-do means the skill has consumed this question; later pulls flag it so
       // `wait` does not count it as a fresh answer. Reopen is not a consumption.
       if (status !== 0) await pushlog.ingested(key);
@@ -313,12 +317,14 @@ export async function close(args) {
 }
 
 /**
- * @param {Ctx} ctx
+ * Archiving is the one destructive command, so it is owner-checked like push/close.
+ * @param {Ctx & { owner: string }} ctx
  * @returns {Promise<{ effort: string, listId: string, prose: string, decisions: { key: string, title: string | null, signal: Signal, status: number | null, ticked: string[], answerText: string | null }[], archived: true }>}
  */
 export async function finish(ctx) {
   const layout = await requireLayout(ctx);
-  const { prose } = await loadHost(ctx.api, layout, ctx.effort);
+  const { prose, state } = await loadHost(ctx.api, layout, ctx.effort);
+  assertOwner(state, ctx.owner, ctx.effort);
   const { questions } = await fetchQuestions(ctx, layout);
   const decisions = questions.filter((q) => q.signal !== 'missing').map((q) => ({ key: q.key, title: q.title, signal: q.signal, status: q.status, ticked: q.items.filter((i) => i.ticked && !i.isOther).map((i) => i.title.replace(/^⭐ /, '')), answerText: q.answerText }));
   await archiveList(ctx.api, layout.listId);
@@ -330,7 +336,7 @@ export async function finish(ctx) {
  * @returns {Promise<{ effort: string, listId: string, hostId: string, owner: string | null, round: number, open: number, answered: number }[]>}
  */
 export async function efforts(args) {
-  const lists = await listEfforts(args.api);
+  const lists = await listEfforts(args.api, args.log);
   /** @type {{ effort: string, listId: string, hostId: string, owner: string | null, round: number, open: number, answered: number }[]} */ const out = [];
   for (const l of lists) {
     const layout = { groupId: '', listId: l.listId, columnId: null, hostId: l.hostId, created: false };

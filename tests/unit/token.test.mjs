@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { readFileSync, statSync, mkdirSync, chmodSync } from 'node:fs';
+import { readFileSync, statSync, mkdirSync, chmodSync, writeFileSync, symlinkSync, lstatSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpDir } from '../helpers/tmp.mjs';
 import { tokenPath, readToken, writeToken, promptHidden } from '../../plugins/grill-over-ticktick/lib/token.mjs';
@@ -53,27 +53,44 @@ test('writeToken tightens a pre-existing looser directory to 0700', async (t) =>
   assert.equal(statSync(join(home, '.config', 'tt-grill')).mode & 0o777, 0o700);
 });
 
-test('writeToken chmods a pre-existing token file to 0600 before writing the new token', async (t) => {
+test('writeToken replaces a pre-existing looser token file atomically: new 0600 file, no temp file left', async (t) => {
   const home = tmpDir(t);
-  const fsp = await import('node:fs/promises');
   const p = tokenPath(home);
   mkdirSync(join(home, '.config', 'tt-grill'), { recursive: true });
-  const { writeFileSync } = await import('node:fs');
   writeFileSync(p, 'old\n'); chmodSync(p, 0o644);
-  /** @type {string[]} */ const ops = [];
-  const rec = /** @type {any} */ ({
-    mkdir: fsp.mkdir,
-    readFile: fsp.readFile,
-    chmod: async (/** @type {string} */ f, /** @type {number} */ m) => { if (f === p) ops.push(`chmod ${m.toString(8)} mode=${(statSync(f).mode & 0o777).toString(8)}`); return fsp.chmod(f, m); },
-    writeFile: async (/** @type {string} */ f, /** @type {string} */ d, /** @type {any} */ o) => { if (f === p) ops.push(`write mode=${(statSync(f).mode & 0o777).toString(8)}`); return fsp.writeFile(f, d, o); },
-  });
-  await writeToken({ home, token: 'new', fs: rec });
-  assert.deepEqual(ops, ['chmod 600 mode=644', 'write mode=600', 'chmod 600 mode=600']);
+  const before = statSync(p).ino;
+  await writeToken({ home, token: 'new' });
   assert.equal(readFileSync(p, 'utf8'), 'new\n');
-  // a fresh home (no file yet) still works: the pre-write chmod tolerates ENOENT
+  assert.equal(statSync(p).mode & 0o777, 0o600);
+  assert.notEqual(statSync(p).ino, before, 'renamed over, not rewritten in place');
+  assert.deepEqual(readdirSync(join(home, '.config', 'tt-grill')), ['token']);
+  // a fresh home (no file yet) works too
   const home2 = tmpDir(t);
   await writeToken({ home: home2, token: 'x' });
   assert.equal(statSync(tokenPath(home2)).mode & 0o777, 0o600);
+  assert.ok(!readdirSync(join(home2, '.config', 'tt-grill')).some((f) => f.includes('.tmp-')));
+});
+
+test('writeToken refuses a symlinked token path (exit 2) and leaves the link target untouched', async (t) => {
+  const home = tmpDir(t);
+  const p = tokenPath(home);
+  mkdirSync(join(home, '.config', 'tt-grill'), { recursive: true });
+  const target = join(home, 'elsewhere');
+  writeFileSync(target, 'precious\n'); chmodSync(target, 0o644);
+  symlinkSync(target, p);
+  await assert.rejects(writeToken({ home, token: 'new' }), (/** @type {any} */ e) => e.exitCode === 2 && /symlink/.test(e.message));
+  assert.equal(readFileSync(target, 'utf8'), 'precious\n');
+  assert.equal(statSync(target).mode & 0o777, 0o644);
+  assert.ok(lstatSync(p).isSymbolicLink());
+  assert.ok(!readdirSync(join(home, '.config', 'tt-grill')).some((f) => f.includes('.tmp-')));
+});
+
+test('writeToken removes its temp file when the rename fails', async (t) => {
+  const home = tmpDir(t);
+  const fsp = await import('node:fs/promises');
+  const failing = /** @type {any} */ ({ ...fsp, rename: async () => { throw Object.assign(new Error('boom'), { code: 'EXDEV' }); } });
+  await assert.rejects(writeToken({ home, token: 'x', fs: failing }), /boom/);
+  assert.deepEqual(readdirSync(join(home, '.config', 'tt-grill')), []);
 });
 
 /** @returns {any} */

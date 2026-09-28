@@ -25,4 +25,4 @@ Never accept, display or read a token. The token is typed by the user in **their
    JSON
    ```
    Tell them to open 🔥 Grill inbox on the phone and tick an item, then run `tt-grill wait --effort "setup-test" --owner "<O>" --every 15s --settle 2m --max 10m` in the background. Read the result per `${CLAUDE_PLUGIN_ROOT}/references/ingest.md` and confirm what they ticked.
-5. **Clean up:** `tt-grill finish --effort "setup-test"`. Say that `/grill-with-ticktick` is ready.
+5. **Clean up:** `tt-grill finish --effort "setup-test" --owner "<O>"`. Say that `/grill-with-ticktick` is ready.

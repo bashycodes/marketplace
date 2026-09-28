@@ -174,7 +174,8 @@ test('full flow: takeover → push → pull → close → finish; pull of unknow
   r = await run(['efforts']); assert.deepEqual(r.json.map((/** @type {any} */ e) => [e.effort, e.open, e.answered]), [['e', 0, 1]]);
   r = await run(['close', '--effort', 'e', '--owner', owner], JSON.stringify({ answered: ['r1.1'] })); assert.equal(r.code, 0); assert.deepEqual(r.json.closed, ['r1.1']);
   r = await run(['pull', '--effort', 'e']); assert.equal(r.code, 0); assert.equal(r.json.questions[0].ingested, true);
-  r = await run(['finish', '--effort', 'e']); assert.equal(r.code, 0); assert.equal(r.json.archived, true); assert.equal(r.json.decisions[0].ticked[0], 'b');
+  r = await run(['finish', '--effort', 'e']); assert.equal(r.code, 2); assert.match(r.ejson.message, /--owner is required for finish/);
+  r = await run(['finish', '--effort', 'e', '--owner', owner]); assert.equal(r.code, 0); assert.equal(r.json.archived, true); assert.equal(r.json.decisions[0].ticked[0], 'b');
   r = await run(['pull', '--effort', 'e']); assert.equal(r.code, 6); assert.equal(r.out, ''); // archived lists are not efforts any more
 });
 
@@ -228,4 +229,13 @@ test('wait: host deleted mid-wait → exit 6', async (t) => {
 test('help', async (t) => {
   const { run } = await harness(t, { token: false });
   const r = await run(['--help']); assert.equal(r.code, 0); assert.match(r.out, /takeover/);
+});
+
+test('every --effort is checked against the effort-name rule before the token is read (exit 2)', async (t) => {
+  const { run, home } = await harness(t, { token: false });
+  for (const argv of [['takeover'], ['pull'], ['finish', '--owner', 'o'], ['close', '--owner', 'o'], ['push', '--owner', 'o'], ['wait', '--owner', 'o']]) {
+    const r = await run([...argv, '--effort', '$(touch pwned)'], '{}');
+    assert.equal(r.code, 2, argv.join(' ')); assert.equal(r.out, ''); assert.match(r.ejson.message, /effort name must match/);
+  }
+  assert.equal(existsSync(`${home}/.config/tt-grill/token`), false);
 });
