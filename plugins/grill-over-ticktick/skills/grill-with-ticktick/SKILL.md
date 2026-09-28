@@ -27,15 +27,17 @@ You run the interview of the `mattpocock-skills:grilling` skill (load it with th
    JSON
    ```
 5. **Tell the user** the round is in TickTick ("N questions in 🔥 Grill inbox, round R") and that they can also just type here to continue in the terminal.
-6. **Wait in the background:** `tt-grill wait --effort "<E>" --owner "<O>"` with the Bash tool's `run_in_background: true`. Do nothing else while it runs; it costs no tokens. It only returns for answers to the current round.
+6. **Wait in the background:** `tt-grill wait --effort "<E>" --owner "<O>"` with the Bash tool's `run_in_background: true`. Do nothing else while it runs; it costs no tokens. It returns for answers to any question not yet consumed by `close` (any round).
 7. **When the wait returns:**
-   - exit 0 → ingest (`ingest.md`; the wait output already contains the `pull` result, but run `pull` again if the ingest is more than a minute later). If the ingest would send nothing in `answered` / `wontdo` / `reopen` / `drop`, do not push — run `wait` again (step 6). If the wait returned `settled` and the only touched questions are `other-only`, re-run `wait` with `--settle` doubled (10m → 20m → 40m → 80m, cap 2h) instead of pushing. Otherwise close once, e.g.:
+   - exit 0 → ingest (`ingest.md`; the wait output already contains the `pull` result, but run `pull` again if the ingest is more than a minute later). If the ingest would send nothing in `answered` / `wontdo` / `reopen` / `drop`, do not push — run `wait` again (step 6). If the wait returned `settled` and the only touched questions are `other-only`, re-run `wait` with `--settle` doubled (10m → 20m → 40m → 80m, cap 2h) instead of pushing. Otherwise close once, passing the updated host prose (`decided` gains what you just ingested, `open` loses it) so the answers are stored in TickTick before they are marked consumed, e.g.:
      ```bash
      tt-grill close --effort "<E>" --owner "<O>" <<'JSON'
-     {"answered": ["r2.1", "r2.3"], "wontdo": [], "reopen": ["r2.2"], "drop": []}
+     {"answered": ["r2.1", "r2.3"], "wontdo": [], "reopen": ["r2.2"], "drop": [],
+      "host": {"goal": "Pick the token store", "decided": ["token in ~/.config/tt-grill/token (r2.1)", "no retries on create (r2.3)"],
+               "open": ["r2.2 How is it read? — ⭐ env"], "notAsked": []}}
      JSON
      ```
-     Recompute the frontier. Empty frontier → finish as `grilling` does: state the shared understanding, then hand back to the user; offer `tt-grill finish --effort "<E>" --owner "<O>"` (archives the list) and run it only if they agree. Otherwise push the next round (step 4). After a partial `settled`, pushing round N+1 removes round N's still-open questions from `wait`'s view; answers to them are still picked up at the next ingest. With `--once` in `$ARGUMENTS`, stop after one push + wait + ingest.
+     Recompute the frontier. Empty frontier → finish as `grilling` does: state the shared understanding, then hand back to the user; offer `tt-grill finish --effort "<E>" --owner "<O>"` (archives the list) and run it only if they agree. Otherwise push the next round (step 4). After a partial `settled`, round N's still-open questions stay in `wait`'s view after you push round N+1; answering any of them ends the next wait like a current-round answer. With `--once` in `$ARGUMENTS`, stop after one push + wait + ingest.
    - exit 3 → another session took over; say so and stop.
    - exit 4 → nothing (or not everything) answered within the limit; report `answered`/`total` from stderr and offer to re-run this skill later.
    - exit 5 / 6 → per `round-schema.md`.

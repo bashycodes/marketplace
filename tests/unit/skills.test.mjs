@@ -36,7 +36,7 @@ test('references exist and round-schema lists every exit code', () => {
   const schema = readFileSync(join(root, 'references', 'round-schema.md'), 'utf8');
   for (const code of ['0', '1', '2', '3', '4', '5', '6']) assert.match(schema, new RegExp(`^\\| ${code} \\|`, 'm'));
   const ingest = readFileSync(join(root, 'references', 'ingest.md'), 'utf8');
-  for (const sig of ['tick', 'text', 'tick+text', 'other-only', 'done', 'wontdo', 'missing']) assert.ok(ingest.includes('`' + sig + '`'), sig);
+  for (const sig of ['tick', 'text', 'tick+text', 'other-only', 'done', 'wontdo', 'missing', 'unknown']) assert.ok(ingest.includes('`' + sig + '`'), sig);
 });
 
 test('every eval case has a prompt and at least one grader', () => {

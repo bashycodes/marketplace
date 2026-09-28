@@ -50,7 +50,7 @@ export function backoffMs(attempt, random) {
 /**
  * @typedef {object} Api
  * @property {(path: string) => Promise<any>} get
- * @property {(path: string, body?: unknown) => Promise<any>} post
+ * @property {(path: string, body?: unknown, opts?: { retry?: boolean }) => Promise<any>} post
  * @property {(path: string) => Promise<any>} del
  */
 
@@ -66,9 +66,11 @@ export function createApi({ fetch, token, log, sleep = (ms) => new Promise((r) =
    * @param {string} method
    * @param {string} path
    * @param {unknown} [body]
+   * @param {boolean} [retry] false for non-idempotent creates: a network error, timeout or 5xx
+   *   may mean the create committed, so it is not re-sent (429 = not processed; still retried).
    * @returns {Promise<any>}
    */
-  async function request(method, path, body) {
+  async function request(method, path, body, retry = true) {
     const where = `${method} ${path}`;
     /** @type {string} */ let lastNote = '';
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -86,6 +88,7 @@ export function createApi({ fetch, token, log, sleep = (ms) => new Promise((r) =
         if (err instanceof TtError) throw err;   // too large: a clean failure, not retried
         lastNote = clean(err instanceof Error ? err.message : String(err));
         log.debug(`network error on ${where} (attempt ${attempt}): ${lastNote}`);
+        if (!retry) throw apiError(`network error (not retried: create): ${where}: ${lastNote}`);
         if (attempt < MAX_ATTEMPTS) { await sleep(backoffMs(attempt, random)); continue; }
         throw apiError(`network error after ${MAX_ATTEMPTS} attempts: ${where}: ${lastNote}`);
       }
@@ -101,7 +104,7 @@ export function createApi({ fetch, token, log, sleep = (ms) => new Promise((r) =
       const errorId = parsed && typeof parsed === 'object' ? parsed.errorId : undefined;
       const serverMsg = parsed && typeof parsed === 'object' && parsed.errorMessage ? clean(String(parsed.errorMessage)) : '';
       if (res.status === 404) throw notFound(`not found: ${where}`, { errorCode });
-      if (RETRY_STATUSES.has(res.status)) {
+      if (RETRY_STATUSES.has(res.status) && (retry || res.status === 429)) {
         log.debug(`retryable ${res.status} on ${where} (attempt ${attempt})`);
         if (attempt < MAX_ATTEMPTS) { await sleep(backoffMs(attempt, random)); continue; }
         throw apiError(`gave up after ${MAX_ATTEMPTS} attempts: ${res.status} ${where}`, { status: res.status, errorCode });
@@ -113,7 +116,7 @@ export function createApi({ fetch, token, log, sleep = (ms) => new Promise((r) =
 
   return {
     get: (path) => request('GET', path),
-    post: (path, body = {}) => request('POST', path, body),
+    post: (path, body = {}, opts = {}) => request('POST', path, body, opts.retry ?? true),
     del: (path) => request('DELETE', path),
   };
 }

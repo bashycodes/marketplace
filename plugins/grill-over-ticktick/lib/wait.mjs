@@ -15,12 +15,13 @@ export function parseDuration(s) {
 }
 
 /**
- * The questions `wait` judges: this round's (`r<host.round>.`) that no `close` has consumed yet.
- * Earlier rounds keep their tick/text signal after being closed, so counting them would settle
- * every wait from round 2 on without a new answer.
+ * The questions `wait` judges: every question of any round that no `close` has consumed yet.
+ * Consumed answers keep their tick/text signal after being closed, so `ingested` (not the
+ * round) is what keeps them from settling a wait without a new answer; an earlier round's
+ * still-open question does count, so answering it on the phone ends the wait.
  * @param {PullResult} r
  */
-const current = (r) => r.questions.filter((q) => q.key.startsWith(`r${r.host.round}.`) && !q.ingested);
+const current = (r) => r.questions.filter((q) => !q.ingested);
 
 /** @param {PullResult} r @returns {string} */
 export function fingerprint(r) {
@@ -32,7 +33,10 @@ export function fingerprint(r) {
  * @returns {Promise<{ reason: 'all' | 'settled' } & PullResult>}
  */
 export async function wait(o) {
-  const checkOwner = (/** @type {PullResult} */ r) => { if (r.host.owner !== o.owner) throw takenOver(`effort taken over by ${r.host.owner ?? 'nobody'}`, { owner: r.host.owner }); };
+  const checkOwner = (/** @type {PullResult} */ r) => {
+    if (!r.host.hasBlock) throw takenOver('host has no state block; run takeover', { owner: null });
+    if (r.host.owner !== o.owner) throw takenOver(`effort taken over by ${r.host.owner ?? 'nobody'}`, { owner: r.host.owner });
+  };
   const t0 = o.now();
   let lastChange = t0;
   let r = await o.pull(); checkOwner(r);

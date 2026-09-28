@@ -16,37 +16,43 @@ export function checkEffort(effort) {
   return /** @type {string} */ (effort);
 }
 
-const FENCE_OPEN = '```grill\n';
-const TAIL_RE = /^```grill\n([\s\S]*?)\n```\s*$/;
+/** A ```grill fence whose opener starts a line; group 1 = the JSON line(s), up to the first closing fence. */
+const BLOCK_RE = /(?:^|\n)```grill\n([\s\S]*?)\n```[ \t]*(?=\n|$)/g;
 
 /** @param {string} effort @returns {string} */
 export function hostTitle(effort) { return `📍 ${effort}`; }
 
 /**
+ * Parse the LAST well-formed ```grill block anywhere in the body. Text typed below it on the
+ * phone is returned as `trailing` (trimmed) instead of making the host look stateless.
  * @param {string | undefined | null} body
- * @returns {{ prose: string, state: HostState | null }}
+ * @returns {{ prose: string, state: HostState | null, trailing: string }}
  */
 export function readBlock(body) {
   const text = (body ?? '').replace(/\r\n?/g, '\n');
-  const start = text.lastIndexOf(FENCE_OPEN);
-  if (start < 0 || !(start === 0 || text[start - 1] === '\n')) return { prose: text, state: null };
-  const m = TAIL_RE.exec(text.slice(start));
-  if (!m) return { prose: text, state: null };
-  /** @type {any} */
-  let parsed;
-  try { parsed = JSON.parse(m[1]); } catch { return { prose: text, state: null }; }
-  if (!parsed || typeof parsed !== 'object' || typeof parsed.gen !== 'number') return { prose: text, state: null };
-  const state = { v: /** @type {1} */ (1), owner: typeof parsed.owner === 'string' ? parsed.owner : null, gen: parsed.gen, round: typeof parsed.round === 'number' ? parsed.round : 0 };
-  return { prose: text.slice(0, start).trimEnd(), state };
+  /** @type {{ prose: string, state: HostState, trailing: string } | null} */ let found = null;
+  for (const m of text.matchAll(BLOCK_RE)) {
+    /** @type {any} */ let parsed;
+    try { parsed = JSON.parse(m[1]); } catch { continue; }
+    if (!parsed || typeof parsed !== 'object' || typeof parsed.gen !== 'number') continue;
+    const start = /** @type {number} */ (m.index) + (m[0].startsWith('\n') ? 1 : 0);
+    const state = { v: /** @type {1} */ (1), owner: typeof parsed.owner === 'string' ? parsed.owner : null, gen: parsed.gen, round: typeof parsed.round === 'number' ? parsed.round : 0 };
+    found = { prose: text.slice(0, start).trimEnd(), state, trailing: text.slice(/** @type {number} */ (m.index) + m[0].length).trim() };
+  }
+  return found ?? { prose: text, state: null, trailing: '' };
 }
 
 /**
+ * The block is always written last; `trailing` (text the user typed below the old block) is
+ * kept, moved above the new block.
  * @param {string} prose
  * @param {HostState} state
+ * @param {string} [trailing]
  * @returns {string}
  */
-export function writeBlock(prose, state) {
-  return `${prose.trimEnd()}\n\n\`\`\`grill\n${JSON.stringify(state)}\n\`\`\`\n`;
+export function writeBlock(prose, state, trailing = '') {
+  const t = trailing.trim();
+  return `${prose.trimEnd()}${t ? '\n\n' + t : ''}\n\n\`\`\`grill\n${JSON.stringify(state)}\n\`\`\`\n`;
 }
 
 /**

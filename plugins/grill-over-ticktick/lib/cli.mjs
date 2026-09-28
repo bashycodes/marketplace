@@ -20,7 +20,7 @@ export const HELP = `tt-grill — relay grilling rounds to TickTick (JSON in/out
   tt-grill takeover --effort E        → {owner, gen, created, listId, hostId}
   tt-grill push --effort E --owner O  stdin: round JSON → {listId, hostId, owner, gen, round, questions}
   tt-grill pull --effort E            → {host, questions, truncated}
-  tt-grill close --effort E --owner O stdin: {answered, wontdo, reopen, drop} → {closed, wontdo, reopened, dropped, skipped}
+  tt-grill close --effort E --owner O stdin: {answered, wontdo, reopen, drop, host?} → {closed, wontdo, reopened, dropped, skipped}
   tt-grill wait --effort E --owner O [--every ${DEFAULTS.every}] [--settle ${DEFAULTS.settle}] [--grace ${DEFAULTS.grace}] [--max ${DEFAULTS.max}]
   tt-grill finish --effort E --owner O → {effort, listId, prose, decisions, archived}
 

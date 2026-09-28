@@ -56,6 +56,8 @@ export async function findLayout(api, effort) {
 }
 
 /**
+ * Creates are sent with `retry: false`: a create that committed but timed out must not be
+ * sent twice. A re-run of `takeover` finds what the first attempt created.
  * @param {Api} api
  * @param {string} effort
  * @returns {Promise<Layout>}
@@ -63,22 +65,22 @@ export async function findLayout(api, effort) {
 export async function ensureLayout(api, effort) {
   let created = false;
   let group = await findGroup(api);
-  if (!group) { group = await api.post('/project/group', { name: FOLDER }); serverId(group?.id, 'group'); created = true; }
+  if (!group) { group = await api.post('/project/group', { name: FOLDER }, { retry: false }); serverId(group?.id, 'group'); created = true; }
   let list = await findList(api, group.id, effort);
   const listExisted = !!list;
-  if (!list) { list = await api.post('/project', { name: effort, groupId: group.id, viewMode: 'kanban', kind: 'TASK' }); serverId(list?.id, 'list'); created = true; }
+  if (!list) { list = await api.post('/project', { name: effort, groupId: group.id, viewMode: 'kanban', kind: 'TASK' }, { retry: false }); serverId(list?.id, 'list'); created = true; }
   const data = await api.get(`/project/${enc(list.id)}/data`);
   let host = hostIn(data, effort);
   // Never convert a list the user already had: an existing list without our host note is only
   // adopted when it is empty.
   if (listExisted && !host && (data?.tasks ?? []).length > 0) throw usage(`list "${effort}" exists in folder Claude but is not a tt-grill list; rename it or pick another effort`);
   let column = columnIn(data);
-  if (!column) { column = await api.post(`/project/${enc(list.id)}/column`, { name: COLUMN, sortOrder: 0 }); serverId(column?.id, 'column'); created = true; }
+  if (!column) { column = await api.post(`/project/${enc(list.id)}/column`, { name: COLUMN, sortOrder: 0 }, { retry: false }); serverId(column?.id, 'column'); created = true; }
   if (!host) {
     host = await api.post('/task', {
       title: hostTitle(effort), projectId: list.id, kind: 'NOTE', columnId: column.id,
       content: writeBlock(hostTitle(effort), { v: 1, owner: null, gen: 0, round: 0 }),
-    });
+    }, { retry: false });
     serverId(host?.id, 'host');
     created = true;
   } else if (host.columnId !== column.id) {
@@ -95,7 +97,7 @@ export async function ensureLayout(api, effort) {
 export async function ensureTag(api) {
   /** @type {any[]} */ const tags = (await api.get('/tag')) ?? [];
   if (tags.some((t) => t.name === TAG)) return false;
-  await api.post('/tag', { name: TAG, label: TAG });
+  await api.post('/tag', { name: TAG, label: TAG }, { retry: false });
   return true;
 }
 

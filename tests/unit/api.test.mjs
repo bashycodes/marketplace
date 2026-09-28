@@ -144,3 +144,18 @@ test('a declared content-length over 2 MiB is refused before reading; a stream-l
   /** @type {any} */ const noStream = async () => ({ ok: true, status: 200, headers: new Headers(), body: null, text: async () => 'x'.repeat(MAX_BODY_BYTES + 1) });
   await assert.rejects(createApi({ fetch: noStream, token: TOKEN, log, sleep: clock.sleep }).get('/project'), (/** @type {any} */ e) => /response too large/.test(e.message));
 });
+
+test('post with retry:false (creates): a 5xx or network error throws on the first attempt; 429 is still retried', async () => {
+  const { api, f, clock } = make([{ method: 'POST', path: '/task', reply: [{ status: 503, text: '' }, ok({ id: 't1' })] }]);
+  await assert.rejects(api.post('/task', {}, { retry: false }), (/** @type {any} */ e) => e.exitCode === 1 && e.extra.status === 503);
+  assert.equal(f.calls.length, 1); assert.deepEqual(clock.sleeps, []);
+  const { api: a2, f: f2 } = make([{ method: 'POST', path: '/task', reply: [new TypeError('socket hang up'), ok({ id: 't1' })] }]);
+  await assert.rejects(a2.post('/task', {}, { retry: false }), (/** @type {any} */ e) => e.exitCode === 1 && /network error \(not retried: create\)/.test(e.message));
+  assert.equal(f2.calls.length, 1);
+  const { api: a3, f: f3 } = make([{ method: 'POST', path: '/task', reply: [{ status: 429, text: '' }, ok({ id: 't1' })] }]);
+  assert.deepEqual(await a3.post('/task', {}, { retry: false }), { id: 't1' });
+  assert.equal(f3.calls.length, 2);
+  // default (updates, filter) still retries
+  const { api: a4, f: f4 } = make([{ method: 'POST', path: '/task/x', reply: [{ status: 503, text: '' }, ok({ id: 'x' })] }]);
+  assert.deepEqual(await a4.post('/task/x', {}), { id: 'x' }); assert.equal(f4.calls.length, 2);
+});

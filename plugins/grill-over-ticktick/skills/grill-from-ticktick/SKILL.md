@@ -13,10 +13,12 @@ Read `${CLAUDE_PLUGIN_ROOT}/references/ingest.md` and `${CLAUDE_PLUGIN_ROOT}/ref
 3. **Ingest and retire in one go.** Run `ingest.md` steps 1–4 only (pull, interpret, record). Then send exactly ONE close — no `reopen` in this mode:
    - `answered` = the keys you took answers from;
    - `wontdo` = every question of **any** round with `ingested: false` whose signal is `none`, `other-only`, `done` or `wontdo` (set on the phone), plus the re-ask cases from `ingest.md` (empty-answer `text`, contradicting ticks).
-   - `drop` = every `missing` key with `ingested: false` (deleted on the phone; consumed with no TickTick write).
+   - `drop` = every `missing` key with `ingested: false` (deleted on the phone; consumed with no TickTick write);
+   - `host` = the host prose with `decided` updated by what you just ingested and `open` emptied of everything you retired (the answers must be stored in TickTick before they are marked consumed; you will not push again from this mode).
    ```bash
    tt-grill close --effort "<E>" --owner "<O>" <<'JSON'
-   {"answered": ["r2.1"], "wontdo": ["r1.3", "r2.2"], "drop": ["r2.4"]}
+   {"answered": ["r2.1"], "wontdo": ["r1.3", "r2.2"], "drop": ["r2.4"],
+    "host": {"goal": "Pick the token store", "decided": ["token in ~/.config/tt-grill/token (r2.1)"], "open": [], "notAsked": ["retry policy"]}}
    JSON
    ```
    Summarise what you learned in two or three lines and name the retired questions; the live round re-asks what still matters.

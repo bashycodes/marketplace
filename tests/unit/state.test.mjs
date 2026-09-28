@@ -10,18 +10,26 @@ test('write → read round-trips state and keeps prose byte-identical', () => {
   const prose = '📍 e\n\nGoal: ship\n\nOpen\n- r1.1 x — ⭐ y';
   const body = writeBlock(prose, S);
   assert.equal(body, prose + '\n\n```grill\n' + JSON.stringify(S) + '\n```\n');
-  assert.deepEqual(readBlock(body), { prose, state: S });
+  assert.deepEqual(readBlock(body), { prose, state: S, trailing: '' });
 });
 
 test('no block → state null, prose is whole body; empty/undefined body', () => {
-  assert.deepEqual(readBlock('just text'), { prose: 'just text', state: null });
-  assert.deepEqual(readBlock(undefined), { prose: '', state: null });
+  assert.deepEqual(readBlock('just text'), { prose: 'just text', state: null, trailing: '' });
+  assert.deepEqual(readBlock(undefined), { prose: '', state: null, trailing: '' });
 });
 
-test('block followed by prose is ignored (must be last)', () => {
-  const body = writeBlock('p', S) + '\nuser typed here';
-  assert.equal(readBlock(body).state, null);
-  assert.equal(readBlock(body).prose, body);
+test('text typed below the block keeps the state and comes back as trailing; a write puts it above the new block', () => {
+  const body = writeBlock('p', S) + '\nuser typed here\n';
+  assert.deepEqual(readBlock(body), { prose: 'p', state: S, trailing: 'user typed here' });
+  const next = { ...S, gen: 4 };
+  const rewritten = writeBlock('p2', next, readBlock(body).trailing);
+  assert.equal(rewritten, 'p2\n\nuser typed here\n\n```grill\n' + JSON.stringify(next) + '\n```\n');
+  assert.deepEqual(readBlock(rewritten), { prose: 'p2\n\nuser typed here', state: next, trailing: '' });
+  // a fence that does not start a line is not a block
+  assert.equal(readBlock('p x```grill\n' + JSON.stringify(S) + '\n```\n').state, null);
+  // a later malformed block does not hide the last well-formed one
+  const withBad = writeBlock('p', S) + '\n```grill\n{oops\n```\n';
+  assert.deepEqual(readBlock(withBad).state, S);
 });
 
 test('malformed json in block → state null', () => {

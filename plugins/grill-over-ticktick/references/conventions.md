@@ -48,7 +48,7 @@ Not asked yet
 {"v":1,"owner":"o_7f3k2a","gen":3,"round":2}
 ```
 ```
-`tt-grill` parses only the block; the prose is opaque to it. `push` rewrites the body **before** creating questions. If the block is not last (user typed below it) the host is treated as having no state.
+`tt-grill` parses only the block (the last well-formed ```` ```grill ```` fence that starts a line); the prose is opaque to it. `push` rewrites the body **before** creating questions, and `close` rewrites the prose when given `host`. Text the user typed below the block on the phone does not break anything: every write keeps it, moved above the new block (which is always written last). A host with no readable block at all makes `wait` exit 3 (`host has no state block; run takeover`).
 
 ## Ownership
 `takeover` writes a fresh `owner` (`o_` + 6 base32 chars) and `gen+1`. `push`, `close`, `wait` and `finish` refuse (exit 3) when the host's owner is not the `--owner` they were given. Both `/grill-with-ticktick` and `/grill-from-ticktick` start with `takeover`; that is how one session kicks another out of `wait`.

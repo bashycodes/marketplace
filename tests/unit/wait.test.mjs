@@ -7,7 +7,7 @@ import { parseDuration, fingerprint, wait, DEFAULTS } from '../../plugins/grill-
 const M = 60_000, S = 1000;
 const log = createLogger({ stderr: /** @type {any} */ ({ write() { return true; } }) });
 /** @param {[string, string | null, string, boolean?][]} qs [key, etag, signal, ingested=false] @param {string} [owner] @param {number} [round] host.round @returns {any} */
-const R = (qs, owner = 'o_a', round = 1) => ({ host: { id: 'h', etag: 'he', owner, gen: 1, round, body: '', prose: '' }, questions: qs.map(([key, etag, signal, ingested = false]) => ({ key, taskId: key, etag, status: 0, title: null, items: [], desc: null, descChanged: false, answerText: null, signal, ingested })), truncated: false });
+const R = (qs, owner = 'o_a', round = 1) => ({ host: { id: 'h', etag: 'he', owner, gen: 1, round, body: '', prose: '', hasBlock: true }, questions: qs.map(([key, etag, signal, ingested = false]) => ({ key, taskId: key, etag, status: 0, title: null, items: [], desc: null, descChanged: false, answerText: null, signal, ingested })), truncated: false });
 /** @param {any[]} seq */
 function scripted(seq) { let i = 0; return { pull: async () => seq[Math.min(i++, seq.length - 1)], calls: () => i }; }
 /** @param {any[]} seq @param {Partial<Parameters<typeof wait>[0]>} [over] */
@@ -25,9 +25,9 @@ test('parseDuration + defaults', () => {
   assert.deepEqual(DEFAULTS, { every: '3m', settle: '10m', grace: '90s', max: '24h' });
 });
 
-test('fingerprint uses key + etag, includes missing as -; only current-round, not-ingested questions', () => {
+test('fingerprint uses key + etag, includes missing as -; every not-ingested question of any round', () => {
   assert.equal(fingerprint(R([['r1.1', 'a', 'none'], ['r1.2', null, 'missing']])), 'r1.1=a,r1.2=-');
-  assert.equal(fingerprint(R([['r1.1', 'a', 'tick', true], ['r1.2', 'b', 'none'], ['r2.1', 'c', 'none'], ['r2.2', 'd', 'tick', true]], 'o_a', 2)), 'r2.1=c');
+  assert.equal(fingerprint(R([['r1.1', 'a', 'tick', true], ['r1.2', 'b', 'none'], ['r2.1', 'c', 'none'], ['r2.2', 'd', 'tick', true]], 'o_a', 2)), 'r1.2=b,r2.1=c');
 });
 
 test('all answered → grace re-pull confirms → reason all', async () => {
@@ -99,10 +99,23 @@ test('earlier-round answered+ingested questions do not count as touched or final
   assert.ok(!clock.sleeps.includes(90 * S));
 });
 
-test('current-round rule ignores an older other-only', async () => {
+test('an older un-ingested other-only counts as touched (settled)', async () => {
   const r = R([['r1.1', 'a', 'other-only'], ['r2.1', 'b', 'none']], 'o_a', 2);
   const { p } = run([r], { max: 30 * M });
-  await assert.rejects(p, (/** @type {any} */ e) => e.exitCode === 4);
+  assert.equal((await p).reason, 'settled');
+});
+
+test('current round all ingested + an older none → tick ends the wait with all', async () => {
+  const open = R([['r2.1', 'a', 'none'], ['r3.1', 'b', 'tick', true], ['r3.2', 'c', 'text', true]], 'o_a', 3);
+  const ans = R([['r2.1', 'a2', 'tick'], ['r3.1', 'b', 'tick', true], ['r3.2', 'c', 'text', true]], 'o_a', 3);
+  const { p, clock } = run([open, ans, ans], { max: 60 * M });
+  const r = await p;
+  assert.equal(r.reason, 'all'); assert.deepEqual(clock.sleeps, [3 * M, 90 * S]);
+});
+
+test('a host with no state block → exit 3 with its own message (not "taken over by nobody")', async () => {
+  const r = R([['r1.1', 'a', 'none']]); r.host.hasBlock = false; r.host.owner = null;
+  await assert.rejects(run([r]).p, (/** @type {any} */ e) => e.exitCode === 3 && e.message === 'host has no state block; run takeover');
 });
 
 test('result still carries the full pull output (older rounds included)', async () => {

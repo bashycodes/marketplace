@@ -10,11 +10,12 @@ import { usage, notFound, takenOver, serverId } from './errors.mjs';
 /** @typedef {import('./state.mjs').HostState} HostState */
 /** @typedef {{ key: string, title: string, context: string, rec: { label: string, why: string }, options: string[] }} Question */
 /** @typedef {{ effort: string, round: number, host: import('./state.mjs').HostProse, questions: Question[] }} Round */
-/** @typedef {'none'|'tick'|'text'|'tick+text'|'other-only'|'done'|'wontdo'|'missing'} Signal */
+/** @typedef {'none'|'tick'|'text'|'tick+text'|'other-only'|'done'|'wontdo'|'missing'|'unknown'} Signal */
+/* `unknown`: in the pushlog but absent from a truncated filter (≥ 200 tasks) — it may still exist; leave it alone. */
 /** @typedef {ReturnType<typeof classifyItems>} Items */
 /** @typedef {{ key: string, taskId: string, etag: string | null, status: number | null, title: string | null, items: Items, desc: string | null, descChanged: boolean, answerText: string | null, signal: Signal, ingested: boolean }} PulledQuestion */
 /* `ingested`: the pushlog has an `ingested <key>` line, i.e. a previous `close` set this question to answered (2) or won't-do (−1). False when unknown. */
-/** @typedef {{ host: { id: string, etag: string | null, owner: string | null, gen: number, round: number, body: string, prose: string }, questions: PulledQuestion[], truncated: boolean }} PullResult */
+/** @typedef {{ host: { id: string, etag: string | null, owner: string | null, gen: number, round: number, body: string, prose: string, hasBlock: boolean }, questions: PulledQuestion[], truncated: boolean }} PullResult */
 /** @typedef {{ api: Api, effort: string, pushlogDir: string, log: Logger, random?: () => number, layout?: Layout }} Ctx */
 
 export const MAX_TEXT = 100000;
@@ -33,8 +34,7 @@ export function validateRound(input) {
   const r = /** @type {any} */ (input);
   if (!isValidEffort(r.effort)) throw fail(`effort: ${EFFORT_RULE}`);
   if (!Number.isInteger(r.round) || r.round < 1) throw fail('round must be a positive integer');
-  if (!r.host || typeof r.host !== 'object') throw fail('host must be an object {goal, decided, open, notAsked}');
-  const host = { goal: typeof r.host.goal === 'string' ? r.host.goal : '', decided: strList(r.host.decided, 'host.decided'), open: strList(r.host.open, 'host.open'), notAsked: strList(r.host.notAsked, 'host.notAsked') };
+  const host = validateHost(r.host, fail);
   if (!Array.isArray(r.questions) || r.questions.length === 0) throw fail('questions must be a non-empty array');
   /** @type {Set<string>} */ const seen = new Set();
   /** @type {Question[]} */ const questions = r.questions.map((/** @type {any} */ q, /** @type {number} */ i) => {
@@ -64,11 +64,24 @@ export function validateRound(input) {
   return { effort: r.effort, round: r.round, host, questions };
 
   /** @param {unknown} v @param {string} name @returns {string[]} */
-  function strList(v, name) {
-    if (v === undefined || v === null) return [];
-    if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) throw fail(`${name} must be an array of strings`);
-    return v;
-  }
+  function strList(v, name) { return strListOf(v, name, fail); }
+}
+
+/** @param {unknown} v @param {string} name @param {(m: string) => Error} fail @returns {string[]} */
+function strListOf(v, name, fail) {
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) throw fail(`${name} must be an array of strings`);
+  return v;
+}
+
+/**
+ * @param {unknown} h @param {(m: string) => Error} fail
+ * @returns {import('./state.mjs').HostProse}
+ */
+function validateHost(h, fail) {
+  if (!h || typeof h !== 'object' || Array.isArray(h)) throw fail('host must be an object {goal, decided, open, notAsked}');
+  const x = /** @type {any} */ (h);
+  return { goal: typeof x.goal === 'string' ? x.goal : '', decided: strListOf(x.decided, 'host.decided', fail), open: strListOf(x.open, 'host.open', fail), notAsked: strListOf(x.notAsked, 'host.notAsked', fail) };
 }
 
 /** @param {string} a @param {string} b */
@@ -108,8 +121,8 @@ async function loadHost(api, layout, effort) {
   const data = await api.get(`/project/${enc(layout.listId)}/data`);
   const task = (data?.tasks ?? []).find((/** @type {any} */ t) => t.id === layout.hostId);
   if (!task) throw notFound(`host "${hostTitle(effort)}" is gone from TickTick`, { effort });
-  const { prose, state } = readBlock(task.content);
-  return { task, prose, state };
+  const { prose, state, trailing } = readBlock(task.content);
+  return { task, prose, state, trailing };
 }
 
 /**
@@ -123,9 +136,9 @@ async function childKeys(api, layout) {
   return out;
 }
 
-/** @param {Api} api @param {Layout} layout @param {string} prose @param {HostState} state */
-async function writeHost(api, layout, prose, state) {
-  await api.post(`/task/${enc(layout.hostId)}`, { id: layout.hostId, projectId: layout.listId, content: writeBlock(prose, state) });
+/** @param {Api} api @param {Layout} layout @param {string} prose @param {HostState} state @param {string} [trailing] */
+async function writeHost(api, layout, prose, state, trailing = '') {
+  await api.post(`/task/${enc(layout.hostId)}`, { id: layout.hostId, projectId: layout.listId, content: writeBlock(prose, state, trailing) });
 }
 
 /** @param {HostState | null} state @param {string} owner @param {string} effort */
@@ -176,11 +189,13 @@ async function fetchQuestions(ctx, layout) {
     if (prev) { ctx.log.warn(`duplicate question ${key}: ${prev.taskId} and ${t.id}`); if (entries.get(key)?.taskId !== t.id) continue; }
     byKey.set(key, q);
   }
+  // A truncated filter cannot prove absence: a pushlog key it did not return may still be live.
+  const truncated = tasks.length >= FILTER_CAP;
   for (const [key, e] of entries) {
-    if (e.taskId && !byKey.has(key)) byKey.set(key, { key, taskId: e.taskId, etag: null, status: null, title: null, items: [], desc: null, descChanged: false, answerText: null, signal: 'missing', ingested: e.ingested });
+    if (e.taskId && !byKey.has(key)) byKey.set(key, { key, taskId: e.taskId, etag: null, status: null, title: null, items: [], desc: null, descChanged: false, answerText: null, signal: truncated ? 'unknown' : 'missing', ingested: e.ingested });
   }
   const questions = [...byKey.values()].sort((a, b) => compareKeys(a.key, b.key));
-  return { questions, truncated: tasks.length >= FILTER_CAP };
+  return { questions, truncated };
 }
 
 /**
@@ -190,7 +205,7 @@ async function fetchQuestions(ctx, layout) {
 export async function takeover(ctx) {
   const layout = await ensureLayout(ctx.api, ctx.effort);
   await ensureTag(ctx.api);
-  const { prose, state } = await loadHost(ctx.api, layout, ctx.effort);
+  const { prose, state, trailing } = await loadHost(ctx.api, layout, ctx.effort);
   // No readable state block (wiped/edited on the phone): rebuild `round` from the highest
   // r<N> among the host's children so push's round guard still has a floor.
   const round = state ? state.round : Math.max(0, ...[...(await childKeys(ctx.api, layout)).keys()].map((k) => Number(k.slice(1).split('.')[0])));
@@ -198,7 +213,7 @@ export async function takeover(ctx) {
   const next = { v: /** @type {1} */ (1), owner, gen: (state?.gen ?? 0) + 1, round };
   // Last-write-wins: the server ignores etags, so a concurrent takeover between the GET
   // above and this write is clobbered (accepted risk per spec).
-  await writeHost(ctx.api, layout, prose.trim() ? prose : hostTitle(ctx.effort), next);
+  await writeHost(ctx.api, layout, prose.trim() ? prose : hostTitle(ctx.effort), next, trailing);
   return { owner, gen: next.gen, created: layout.created, listId: layout.listId, hostId: layout.hostId };
 }
 
@@ -229,10 +244,14 @@ export async function push(args) {
     if (reused) throw usage(`key ${reused.key} already exists in TickTick; a new round must use new keys`);
   }
   await ensureTag(args.api);
-  const next = { v: /** @type {1} */ (1), owner: args.owner, gen: state?.gen ?? 0, round: round.round };
-  // Last-write-wins: the server ignores etags, so a concurrent takeover between the GET
-  // above and this write is clobbered (accepted risk per spec).
-  await writeHost(args.api, layout, renderHostProse({ effort: args.effort, host: round.host }), next);
+  // Re-read the owner immediately before the write (spec §3.2): a takeover during the lookups
+  // above must win, not be clobbered by this write.
+  const fresh = await loadHost(args.api, layout, args.effort);
+  assertOwner(fresh.state, args.owner, args.effort);
+  const next = { v: /** @type {1} */ (1), owner: args.owner, gen: fresh.state?.gen ?? 0, round: round.round };
+  // Last-write-wins: the server ignores etags, so a takeover in the few ms between this GET and
+  // the write is still clobbered (accepted risk per spec).
+  await writeHost(args.api, layout, renderHostProse({ effort: args.effort, host: round.host }), next, fresh.trailing);
 
   /** @type {{ key: string, taskId: string, created: boolean }[]} */ const questions = [];
   for (const q of round.questions) {
@@ -244,7 +263,7 @@ export async function push(args) {
     const t = await args.api.post('/task', {
       title: q.title, projectId: layout.listId, parentId: layout.hostId, kind: 'CHECKLIST',
       desc: buildDesc(q), items: buildItems(q.options, q.rec.label), tags: [TAG],
-    });
+    }, { retry: false });   // never re-send a create: a re-run of push adopts it by footer
     serverId(t?.id, 'task');   // before the id reaches the pushlog
     await pushlog.created(q.key, t.id);
     questions.push({ key: q.key, taskId: t.id, created: true });
@@ -261,36 +280,47 @@ export async function pull(ctx) {
   const { task, prose, state } = await loadHost(ctx.api, layout, ctx.effort);
   const { questions, truncated } = await fetchQuestions(ctx, layout);
   return {
-    host: { id: task.id, etag: task.etag ?? null, owner: state?.owner ?? null, gen: state?.gen ?? 0, round: state?.round ?? 0, body: task.content ?? '', prose },
+    host: { id: task.id, etag: task.etag ?? null, owner: state?.owner ?? null, gen: state?.gen ?? 0, round: state?.round ?? 0, body: task.content ?? '', prose, hasBlock: state !== null },
     questions, truncated,
   };
 }
 
 /**
+ * Order: validate input → owner check → host prose (optional) → status writes → owner re-check →
+ * `ingested` lines. Writing the host prose first makes the ingest durable in TickTick before
+ * anything is marked consumed; the re-check keeps a session that was taken over mid-close from
+ * consuming answers (its status writes stay un-ingested, so the new owner still sees them).
  * @param {Ctx & { owner: string, input: unknown }} args
  * @returns {Promise<{ closed: string[], wontdo: string[], reopened: string[], dropped: string[], skipped: string[] }>}
  */
 export async function close(args) {
   const inp = /** @type {any} */ (args.input);
-  if (!inp || typeof inp !== 'object') throw usage('close JSON: expected {answered?, wontdo?, reopen?, drop?}');
+  if (!inp || typeof inp !== 'object' || Array.isArray(inp)) throw usage('close JSON: expected {answered?, wontdo?, reopen?, drop?, host?}');
   const list = (/** @type {string} */ name) => { const v = inp[name]; if (v === undefined) return /** @type {string[]} */ ([]); if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) throw usage(`close JSON: ${name} must be an array of keys`); return v; };
   const answered = list('answered'), wontdo = list('wontdo'), reopen = list('reopen'), drop = list('drop');
+  const host = inp.host === undefined ? null : validateHost(inp.host, (m) => usage(`close JSON: ${m}`));
   /** @type {Set<string>} */ const seenKeys = new Set();
   for (const key of [...answered, ...wontdo, ...reopen, ...drop]) {
     if (seenKeys.has(key)) throw usage(`close JSON: key ${key} appears more than once`);
     seenKeys.add(key);
   }
   const layout = await requireLayout(args);
-  const { state } = await loadHost(args.api, layout, args.effort);
+  const { state, trailing } = await loadHost(args.api, layout, args.effort);
   assertOwner(state, args.owner, args.effort);
+  const hostBody = host && state ? writeBlock(renderHostProse({ effort: args.effort, host }), state, trailing) : '';
+  if (hostBody.length > MAX_TEXT) throw usage(`close JSON: host body exceeds ${MAX_TEXT} chars`);
   // Resolve key → taskId the same way pull does: footer key first, pushlog reverse-lookup
   // as fallback. The pushlog alone is not enough — it can be lost (other machine, wiped
   // state dir) while the footer on the task itself survives.
-  const { questions } = await fetchQuestions(args, layout);
-  const byKey = new Map(questions.filter((q) => q.signal !== 'missing').map((q) => [q.key, q]));
+  const { questions, truncated } = await fetchQuestions(args, layout);
+  if (drop.length && truncated) throw usage('cannot drop while the filter is truncated');
+  const byKey = new Map(questions.filter((q) => q.signal !== 'missing' && q.signal !== 'unknown').map((q) => [q.key, q]));
   const missing = new Set(questions.filter((q) => q.signal === 'missing').map((q) => q.key));
   const out = { closed: /** @type {string[]} */ ([]), wontdo: /** @type {string[]} */ ([]), reopened: /** @type {string[]} */ ([]), dropped: /** @type {string[]} */ ([]), skipped: /** @type {string[]} */ ([]) };
   const pushlog = createPushlog({ dir: args.pushlogDir, listId: layout.listId });
+  // Durable ingest: the decided/open prose lands on the host before any status write.
+  if (host && state) await writeHost(args.api, layout, renderHostProse({ effort: args.effort, host }), state, trailing);
+  /** @type {string[]} */ const consumed = [];
   /** @param {string[]} keys @param {number} status @param {string[]} into */
   const apply = async (keys, status, into) => {
     for (const key of keys) {
@@ -299,7 +329,7 @@ export async function close(args) {
       await args.api.post(`/task/${enc(q.taskId)}`, { id: q.taskId, projectId: layout.listId, status });
       // Answered / won't-do means the skill has consumed this question; later pulls flag it so
       // `wait` does not count it as a fresh answer. Reopen is not a consumption.
-      if (status !== 0) await pushlog.ingested(key);
+      if (status !== 0) consumed.push(key);
       into.push(key);
     }
   };
@@ -310,8 +340,13 @@ export async function close(args) {
   // the `ingested` line, so `wait` stops counting it and the skill never re-pushes it.
   for (const key of drop) {
     if (!missing.has(key)) { out.skipped.push(key); continue; }
-    await pushlog.ingested(key);
+    consumed.push(key);
     out.dropped.push(key);
+  }
+  if (consumed.length) {
+    const again = await loadHost(args.api, layout, args.effort);
+    assertOwner(again.state, args.owner, args.effort);
+    for (const key of consumed) await pushlog.ingested(key);
   }
   return out;
 }
@@ -326,7 +361,7 @@ export async function finish(ctx) {
   const { prose, state } = await loadHost(ctx.api, layout, ctx.effort);
   assertOwner(state, ctx.owner, ctx.effort);
   const { questions } = await fetchQuestions(ctx, layout);
-  const decisions = questions.filter((q) => q.signal !== 'missing').map((q) => ({ key: q.key, title: q.title, signal: q.signal, status: q.status, ticked: q.items.filter((i) => i.ticked && !i.isOther).map((i) => i.title.replace(/^⭐ /, '')), answerText: q.answerText }));
+  const decisions = questions.filter((q) => q.signal !== 'missing' && q.signal !== 'unknown').map((q) => ({ key: q.key, title: q.title, signal: q.signal, status: q.status, ticked: q.items.filter((i) => i.ticked && !i.isOther).map((i) => i.title.replace(/^⭐ /, '')), answerText: q.answerText }));
   await archiveList(ctx.api, layout.listId);
   return { effort: ctx.effort, listId: layout.listId, prose, decisions, archived: true };
 }

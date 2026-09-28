@@ -88,7 +88,7 @@ test('takeover on a fresh account creates the layout and writes owner/gen=1; aga
   tt.find(a.hostId).content = readBlock(host.content).prose + ' extra\n\n```grill\n' + JSON.stringify({ v: 1, owner: a.owner, gen: 1, round: 3 }) + '\n```\n';
   const b = await takeover({ ...ctx, random: () => 0.9 });
   assert.equal(b.gen, 2); assert.notEqual(b.owner, a.owner); assert.equal(b.created, false);
-  assert.deepEqual(readBlock(tt.find(a.hostId).content), { prose: '📍 e extra', state: { v: 1, owner: b.owner, gen: 2, round: 3 } });
+  assert.deepEqual(readBlock(tt.find(a.hostId).content), { prose: '📍 e extra', state: { v: 1, owner: b.owner, gen: 2, round: 3 }, trailing: '' });
 });
 
 test('push: writes host body first, creates questions one at a time with desc/items/tag/parent, logs pushlog', async (t) => {
@@ -418,4 +418,96 @@ test('a malicious list id from the server is rejected before it is used in a pat
   const before = tt.calls.length;
   for (const f of [() => pull(ctx), () => takeover(ctx)]) await assert.rejects(f(), (/** @type {any} */ e) => e.exitCode === 1 && /unexpected id from server/.test(e.message));
   assert.ok(!tt.calls.slice(before).some((c) => c.path.includes('..')));
+});
+
+/** @param {import('node:test').TestContext} t @param {(tt: ReturnType<typeof fakeTickTick>, url: string, init: any) => Response | void | Promise<Response | void>} hook */
+function hooked(t, hook) {
+  const tt = fakeTickTick();
+  const f = /** @type {typeof fetch} */ (async (url, init) => (await hook(tt, new URL(String(url)).pathname.replace(/^\/open\/v1/, ''), init)) ?? tt.fetch(url, init));
+  const log = createLogger({ stderr: /** @type {any} */ ({ write() { return true; } }) });
+  return { tt, ctx: { api: createApi({ fetch: f, token: 'T', log, sleep: async () => {} }), effort: 'e', pushlogDir: tmpDir(t), log, random: () => 0.123 } };
+}
+
+test('truncated filter: pushlog keys the filter did not return are `unknown` (not missing); close refuses drop while truncated', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner, listId, hostId } = await takeover(ctx);
+  for (let i = 0; i < 200; i++) tt.db.tasks.push({ id: `seed${i}`, projectId: listId, parentId: hostId, title: `s${i}`, kind: 'CHECKLIST', status: 0, tags: ['grill'], etag: 'z', desc: buildDesc({ key: `r1.${i + 1}`, context: 'c', rec: { label: 'a', why: 'w' } }) });
+  const p = await push({ ...ctx, owner, round: structuredClone(ROUND) });   // r2.* land beyond the 200 cap
+  const r = await pull(ctx);
+  assert.equal(r.truncated, true);
+  assert.deepEqual(r.questions.filter((q) => q.key.startsWith('r2.')).map((q) => [q.key, q.signal, q.etag]), [['r2.1', 'unknown', null], ['r2.2', 'unknown', null]]);
+  const before = tt.calls.length;
+  await assert.rejects(close({ ...ctx, owner, input: { drop: ['r2.1'] } }), (/** @type {any} */ e) => e.exitCode === 2 && e.message === 'cannot drop while the filter is truncated');
+  assert.ok(!tt.calls.slice(before).some((c) => c.method === 'POST' && c.path !== '/task/filter'));
+  assert.equal(tt.find(p.questions[0].taskId).status, 0);
+  assert.ok(!readFileSync(join(ctx.pushlogDir, `${listId}.log`), 'utf8').includes('ingested'));
+  const { FINAL, TOUCHED } = await import('../../plugins/grill-over-ticktick/lib/rounds.mjs');
+  assert.ok(!FINAL.has('unknown') && !TOUCHED.has('unknown'));
+});
+
+test('close with host: rewrites the host prose (state and trailing text unchanged) before any status write', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner, hostId } = await takeover(ctx);
+  const p = await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  tt.find(hostId).content += '\nnote from the phone';
+  const stateBefore = readBlock(tt.find(hostId).content).state;
+  const before = tt.calls.length;
+  const host = { goal: 'ship', decided: ['file (r1.2)', 'token in file (r2.1)'], open: ['r2.2 how — ⭐ env'], notAsked: ['ci'] };
+  const r = await close({ ...ctx, owner, input: { answered: ['r2.1'], host } });
+  assert.deepEqual(r.closed, ['r2.1']);
+  const after = readBlock(tt.find(hostId).content);
+  assert.deepEqual(after.state, stateBefore);
+  assert.equal(after.prose, '📍 e\n\nGoal: ship\n\nDecided\n- file (r1.2)\n- token in file (r2.1)\n\nOpen\n- r2.2 how — ⭐ env\n\nNot asked yet\n- ci\n\nnote from the phone');
+  const writes = tt.calls.slice(before).filter((c) => c.method === 'POST' && c.path !== '/task/filter').map((c) => c.path);
+  assert.deepEqual(writes, [`/task/${hostId}`, `/task/${p.questions[0].taskId}`]);
+  await assert.rejects(close({ ...ctx, owner, input: { host: { decided: 'x' } } }), (/** @type {any} */ e) => e.exitCode === 2 && /host\.decided/.test(e.message));
+});
+
+test('text typed below the host block is not a takeover: push keeps the state and moves the text above the new block', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner, hostId } = await takeover(ctx);
+  tt.find(hostId).content += '\nremember the CI box';
+  const r = await pull(ctx);
+  assert.equal(r.host.owner, owner); assert.equal(r.host.hasBlock, true);
+  await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  const body = tt.find(hostId).content;
+  assert.ok(body.includes('remember the CI box\n\n```grill\n'), body);
+  assert.deepEqual(readBlock(body).state, { v: 1, owner, gen: 1, round: 2 });
+  tt.find(hostId).content = 'wiped';
+  assert.equal((await pull(ctx)).host.hasBlock, false);
+});
+
+test('push: question creates are not retried (503 → exit 1 after one POST /task)', async (t) => {
+  let fail = false; let creates = 0;
+  const { tt, ctx } = hooked(t, (_tt, path, init) => { if (fail && init?.method === 'POST' && path === '/task') { creates++; return new Response('', { status: 503 }); } });
+  const { owner } = await takeover(ctx);
+  fail = true;
+  await assert.rejects(push({ ...ctx, owner, round: structuredClone(ROUND) }), (/** @type {any} */ e) => e.exitCode === 1 && e.extra?.status === 503);
+  assert.equal(creates, 1);
+  assert.equal(tt.db.tasks.filter((x) => x.kind === 'CHECKLIST').length, 0);
+});
+
+test('push re-checks the owner right before writing the host: a takeover during the lookups wins', async (t) => {
+  let steal = false; let thief = '';
+  const { tt, ctx } = hooked(t, async (tt2, path, init) => {
+    if (steal && path === '/tag' && (init?.method ?? 'GET') === 'GET') { steal = false; thief = (await takeover({ ...ctx, random: () => 0.9 })).owner; }
+  });
+  const { owner, hostId } = await takeover(ctx);
+  steal = true;
+  await assert.rejects(push({ ...ctx, owner, round: structuredClone(ROUND) }), (/** @type {any} */ e) => e.exitCode === 3);
+  assert.equal(readBlock(tt.find(hostId).content).state?.owner, thief);
+  assert.equal(tt.db.tasks.filter((x) => x.kind === 'CHECKLIST').length, 0);
+});
+
+test('close re-checks the owner before writing ingested lines: a takeover mid-close consumes nothing', async (t) => {
+  let steal = false;
+  const { tt, ctx } = hooked(t, async (tt2, path, init) => {
+    if (steal && init?.method === 'POST' && /^\/task\/t\d+$/.test(path) && JSON.parse(String(init.body)).status === 2) { steal = false; await takeover({ ...ctx, random: () => 0.9 }); }
+  });
+  const { owner, listId } = await takeover(ctx);
+  const p = await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  steal = true;
+  await assert.rejects(close({ ...ctx, owner, input: { answered: ['r2.1'], wontdo: ['r2.2'] } }), (/** @type {any} */ e) => e.exitCode === 3);
+  assert.equal(tt.find(p.questions[0].taskId).status, 2);
+  assert.ok(!readFileSync(join(ctx.pushlogDir, `${listId}.log`), 'utf8').includes('ingested'));
 });
