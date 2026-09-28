@@ -3,7 +3,7 @@
 `tt-grill` owns every byte written to TickTick. Skills never craft TickTick payloads; they send round JSON (see `round-schema.md`) and read back `pull` JSON.
 
 ## Effort names
-An effort name must match `^[A-Za-z0-9][A-Za-z0-9 ._-]{0,59}$`: 1–60 characters, only letters, digits, space, `.`, `_` and `-`, starting with a letter or digit. No quotes, `$`, backticks or newlines — the name is pasted into shell commands. `tt-grill` refuses anything else with exit 2 (every `--effort` and the round JSON `effort`), and `efforts` never lists a list whose name breaks the rule.
+An effort name must match `^[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,58}[A-Za-z0-9._-])?$`: 1–60 characters, only letters, digits, space, `.`, `_` and `-`, starting with a letter or digit and with no leading or trailing space. No quotes, `$`, backticks or newlines — the name is pasted into shell commands. `tt-grill` refuses anything else with exit 2 (every `--effort` and the round JSON `effort`), and `efforts` never lists a list whose name breaks the rule.
 
 ## Layout
 - Folder **`Claude`** → one kanban **list per effort** (list title = effort name) → tasks → subtasks.

@@ -318,8 +318,16 @@ export async function close(args) {
   const missing = new Set(questions.filter((q) => q.signal === 'missing').map((q) => q.key));
   const out = { closed: /** @type {string[]} */ ([]), wontdo: /** @type {string[]} */ ([]), reopened: /** @type {string[]} */ ([]), dropped: /** @type {string[]} */ ([]), skipped: /** @type {string[]} */ ([]) };
   const pushlog = createPushlog({ dir: args.pushlogDir, listId: layout.listId });
-  // Durable ingest: the decided/open prose lands on the host before any status write.
-  if (host && state) await writeHost(args.api, layout, renderHostProse({ effort: args.effort, host }), state, trailing);
+  // Durable ingest: the decided/open prose lands on the host before any status write. Re-read
+  // the owner immediately before this write (spec §3.2, same as push before its writeHost):
+  // fetchQuestions above ran a `/task/filter` POST with retries, so a takeover in that gap must
+  // win, not be clobbered by a write carrying the stale owner/gen loaded before it.
+  if (host && state) {
+    const freshHost = await loadHost(args.api, layout, args.effort);
+    assertOwner(freshHost.state, args.owner, args.effort);
+    const next = { v: /** @type {1} */ (1), owner: args.owner, gen: freshHost.state?.gen ?? 0, round: freshHost.state?.round ?? 0 };
+    await writeHost(args.api, layout, renderHostProse({ effort: args.effort, host }), next, freshHost.trailing);
+  }
   /** @type {string[]} */ const consumed = [];
   /** @param {string[]} keys @param {number} status @param {string[]} into */
   const apply = async (keys, status, into) => {

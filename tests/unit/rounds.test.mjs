@@ -7,7 +7,7 @@ import { fakeTickTick } from '../helpers/fake-ticktick.mjs';
 import { body } from '../helpers/fixtures.mjs';
 import { createApi } from '../../plugins/grill-over-ticktick/lib/api.mjs';
 import { createLogger } from '../../plugins/grill-over-ticktick/lib/log.mjs';
-import { readBlock } from '../../plugins/grill-over-ticktick/lib/state.mjs';
+import { readBlock, writeBlock } from '../../plugins/grill-over-ticktick/lib/state.mjs';
 import { parseDesc, classifyItems, OTHER_TITLE, buildDesc, REC_PREFIX } from '../../plugins/grill-over-ticktick/lib/desc.mjs';
 import { validateRound, compareKeys, signalFor, newOwner, takeover, push, pull, close, finish, efforts, ANSWERED } from '../../plugins/grill-over-ticktick/lib/rounds.mjs';
 
@@ -510,4 +510,25 @@ test('close re-checks the owner before writing ingested lines: a takeover mid-cl
   await assert.rejects(close({ ...ctx, owner, input: { answered: ['r2.1'], wontdo: ['r2.2'] } }), (/** @type {any} */ e) => e.exitCode === 3);
   assert.equal(tt.find(p.questions[0].taskId).status, 2);
   assert.ok(!readFileSync(join(ctx.pushlogDir, `${listId}.log`), 'utf8').includes('ingested'));
+});
+
+test('close re-checks the owner right before its host prose write: a takeover during fetchQuestions is not clobbered', async (t) => {
+  let steal = false; let hostId = '';
+  const { tt, ctx } = hooked(t, (tt2, path, init) => {
+    if (steal && path === '/task/filter' && init?.method === 'POST') {
+      steal = false;
+      const { prose, state, trailing } = readBlock(tt2.find(hostId).content);
+      if (!state) throw new Error('expected a state block');
+      tt2.find(hostId).content = writeBlock(prose, { ...state, owner: 'o_other' }, trailing);
+    }
+  });
+  const to = await takeover(ctx);
+  hostId = to.hostId;
+  const { owner } = to;
+  const p = await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  steal = true;
+  const host = { goal: 'ship', decided: ['file (r1.2)', 'token in file (r2.1)'], open: ['r2.2 how — ⭐ env'], notAsked: ['ci'] };
+  await assert.rejects(close({ ...ctx, owner, input: { answered: ['r2.1'], host } }), (/** @type {any} */ e) => e.exitCode === 3);
+  assert.equal(readBlock(tt.find(hostId).content).state?.owner, 'o_other');
+  assert.equal(tt.find(p.questions[0].taskId).status, 0);
 });

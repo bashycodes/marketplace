@@ -25,7 +25,7 @@ export const HELP = `tt-grill — relay grilling rounds to TickTick (JSON in/out
   tt-grill finish --effort E --owner O → {effort, listId, prose, decisions, archived}
 
 exit codes: 0 ok · 1 error · 2 usage · 3 taken over · 4 gave up waiting · 5 auth · 6 not found
-effort names: ^[A-Za-z0-9][A-Za-z0-9 ._-]{0,59}$
+effort names: ^[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,58}[A-Za-z0-9._-])?$
 env: TICKTICK_TOKEN (CI/cloud only), TT_GRILL_DEBUG=1, XDG_STATE_HOME
 `;
 
