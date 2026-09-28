@@ -1,6 +1,6 @@
 # Ingest: turning `pull` output into grilling answers
 
-Both `/grill-with-ticktick` and `/grill-from-ticktick` run this identically.
+Both `/grill-with-ticktick` and `/grill-from-ticktick` follow this procedure and table, with one override: `/grill-from-ticktick` retires everything it does not take an answer from, so the "stay open" outcomes (`none`, `other-only`) and the `done` → `reopen` outcome below become `wontdo` there (see its step 3). It never sends `reopen`.
 
 1. `tt-grill pull --effort "<E>"` → parse stdout. Exit 6 (no such effort, or the host note was deleted) → say "host not found in TickTick" and offer to re-push the round. Exit 5 → point at `/setup-ticktick`.
 2. Consider **every question with `ingested: false`** (any round; `ingested: true` means an earlier `close` already consumed it — skip it). Interpret each per the table below: `none` and `other-only` stay open (neither closed nor re-pushed); `done` (completed, no tick, no text) → `reopen`; **re-ask** cases — a `text` whose `answerText` is empty (`""`: the user edited the context, not the answer) and contradicting ticks — are unanswered: do not put them in `answered`; send the old key in `wontdo` and re-ask under a new key in the next round; a `wontdo` set on the phone → send it in `wontdo` too (re-sending −1 is harmless and marks it ingested); `missing` (deleted on the phone) → send it in `drop`: it is consumed (marked ingested, no TickTick write), dropped from the tree, never re-pushed, never counted; `unknown` (only when `truncated:true`) → leave it alone: send it in no list.

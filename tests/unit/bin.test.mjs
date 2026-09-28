@@ -36,3 +36,11 @@ test('no args → same as --help but exit 2', () => {
   const r = run([]);
   assert.equal(r.code, 2);
 });
+
+test('Node < 20 → exit 2 with the standard usage JSON, before any module is loaded', () => {
+  const fake = 'data:text/javascript,' + encodeURIComponent("Object.defineProperty(process.versions, 'node', { value: '18.19.0' });");
+  const r = spawnSync(process.execPath, ['--import', fake, BIN, '--help'], { env: { PATH: process.env.PATH, HOME: '/nonexistent-home' }, encoding: 'utf8' });
+  assert.equal(r.status, 2);
+  assert.equal(r.stdout, '');
+  assert.deepEqual(JSON.parse(r.stderr), { error: 'usage', message: 'tt-grill requires Node >= 20' });
+});
