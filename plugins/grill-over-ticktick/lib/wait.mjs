@@ -3,7 +3,7 @@ import { usage, takenOver, gaveUp } from './errors.mjs';
 
 /** @typedef {import('./rounds.mjs').PullResult} PullResult */
 
-export const DEFAULTS = Object.freeze({ every: '3m', settle: '10m', grace: '90s', max: '24h' });
+export const DEFAULTS = Object.freeze({ every: '3m', settle: '10m', grace: '90s', max: '72h' });
 const UNITS = { ms: 1, s: 1000, m: 60_000, h: 3_600_000 };
 
 /** @param {string} s @returns {number} */

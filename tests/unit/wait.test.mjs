@@ -22,7 +22,7 @@ test('parseDuration + defaults', () => {
   assert.throws(() => parseDuration('3 m'), (/** @type {any} */ e) => e.exitCode === 2);
   assert.throws(() => parseDuration('soon'), (/** @type {any} */ e) => e.exitCode === 2);
   assert.throws(() => parseDuration('0s'), (/** @type {any} */ e) => e.exitCode === 2);
-  assert.deepEqual(DEFAULTS, { every: '3m', settle: '10m', grace: '90s', max: '24h' });
+  assert.deepEqual(DEFAULTS, { every: '3m', settle: '10m', grace: '90s', max: '72h' });
 });
 
 test('fingerprint uses key + etag, includes missing as -; every not-ingested question of any round', () => {
