@@ -25,7 +25,7 @@ An effort name must match `^[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,58}[A-Za-z0-9._-])?$
 
   ⌁ <key> <hash>
   ```
-  `<key>` = `r<round>.<n>`; `<hash>` = first 8 hex of SHA-256 over the normalised text above the footer (CRLF→LF, trailing whitespace stripped, trailing blank lines dropped). `pull` recomputes it: mismatch or missing footer ⇒ `descChanged: true` ⇒ the user typed something.
+  `<key>` = `r<round>.<n>`; `<hash>` = first 8 hex of SHA-256 over the normalised text above the footer (CRLF→LF, trailing whitespace stripped, trailing blank lines dropped, and backslash-escapes TickTick inserts around markdown-special punctuation stripped before hashing). `pull` recomputes it: mismatch or missing footer ⇒ `descChanged: true` ⇒ the user typed something.
 - `items` = `⭐ <recommended>` first, then the other options in the given order, then `Other → type after ✍️`.
 
 ## Host body

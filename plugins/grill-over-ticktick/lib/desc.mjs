@@ -6,9 +6,17 @@ export const REC_PREFIX = '⭐ ';
 export const KEY_RE = /^r\d+\.\d+$/;
 const FOOTER_RE = /^⌁ (r\d+\.\d+) ([0-9a-f]{8})$/;
 
+/** Backslash-escapes TickTick's server inserts around markdown-special punctuation. */
+const ESCAPE_RE = /\\([\\`*_{}\[\]()#+\-.!|<>~])/g;
+
+/** @param {string} text @returns {string} */
+export function unescapeMarkdown(text) {
+  return text.replace(ESCAPE_RE, '$1');
+}
+
 /** @param {string} text @returns {string} */
 export function normalise(text) {
-  const lines = text.replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/[ \t]+$/, ''));
+  const lines = unescapeMarkdown(text).replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/[ \t]+$/, ''));
   while (lines.length && lines[lines.length - 1] === '') lines.pop();
   return lines.join('\n');
 }

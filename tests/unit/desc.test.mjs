@@ -69,3 +69,37 @@ test('classifyItems maps status 1 → ticked and flags rec/other', () => {
 });
 
 test('KEY_RE', () => { assert.ok(KEY_RE.test('r10.3')); assert.ok(!KEY_RE.test('r1')); assert.ok(!KEY_RE.test('R1.1')); });
+
+test('TickTick markdown escaping of punctuation is not an edit', () => {
+  const d = buildDesc({
+    key: 'r1.3',
+    context: 'Spec §11 kept the door open. Options range from a thin hand-back (grill result → /wayfinder in the terminal) to the full map/tickets/columns design in TickTick.',
+    rec: { label: 'full wayfinder map + tickets in TickTick', why: 'that was the original goal; v1 already preserved the host abstraction and block-last contract for it' },
+  });
+  const lines = d.split('\n');
+  const footer = lines.pop();
+  const escaped = lines.join('\n').replace(/[().+]/g, (c) => `\\${c}`) + '\n' + footer;
+  const p = parseDesc(escaped);
+  assert.equal(p.changed, false);
+  assert.equal(p.answerText, '');
+  assert.equal(p.key, 'r1.3');
+});
+
+test('typed answer after the marker still gives changed:true with the text even when the rest is escaped', () => {
+  const d = buildDesc({
+    key: 'r1.3',
+    context: 'Spec §11 kept the door open. Options range from a thin hand-back (grill result → /wayfinder in the terminal) to the full map/tickets/columns design in TickTick.',
+    rec: { label: 'full wayfinder map + tickets in TickTick', why: 'that was the original goal; v1 already preserved the host abstraction and block-last contract for it' },
+  });
+  const withAnswer = d.replace('✍️ Answer:', '✍️ Answer: full wayfinder map + tickets');
+  const lines = withAnswer.split('\n');
+  const footer = lines.pop();
+  const escaped = lines.join('\n').replace(/[().+]/g, (c) => `\\${c}`) + '\n' + footer;
+  const p = parseDesc(escaped);
+  assert.equal(p.changed, true);
+  assert.equal(p.answerText, 'full wayfinder map + tickets');
+});
+
+test('normalise strips TickTick-style backslash escapes around markdown punctuation', () => {
+  assert.equal(normalise('a \\(b\\) \\*c\\*'), 'a (b) *c*');
+});

@@ -36,6 +36,12 @@ test('malformed json in block → state null', () => {
   assert.equal(readBlock('p\n\n```grill\n{oops\n```\n').state, null);
 });
 
+test('block JSON mangled with TickTick markdown escapes (e.g. \\_ inside a string) still parses via the unescape fallback', () => {
+  const state = { v: /** @type {1} */ (1), owner: 'o_7f3k2a', gen: 3, round: 2 };
+  const raw = JSON.stringify(state).replace(/_/g, '\\_');
+  assert.deepEqual(readBlock('p\n\n```grill\n' + raw + '\n```\n').state, state);
+});
+
 test('an earlier grill fence in the prose does not hide the last block', () => {
   const early = JSON.stringify({ v: 1, owner: null, gen: 0, round: 0 });
   const late = JSON.stringify({ v: 1, owner: 'o_aaaaaa', gen: 2, round: 1 });

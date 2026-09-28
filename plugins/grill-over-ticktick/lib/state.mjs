@@ -2,6 +2,7 @@
 /** @typedef {{ goal: string, decided: string[], open: string[], notAsked: string[] }} HostProse */
 
 import { usage } from './errors.mjs';
+import { unescapeMarkdown } from './desc.mjs';
 
 /** Effort names end up in list titles and in shell commands the skills write, so the alphabet is closed. */
 export const EFFORT_RE = /^[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,58}[A-Za-z0-9._-])?$/;
@@ -33,7 +34,11 @@ export function readBlock(body) {
   /** @type {{ prose: string, state: HostState, trailing: string } | null} */ let found = null;
   for (const m of text.matchAll(BLOCK_RE)) {
     /** @type {any} */ let parsed;
-    try { parsed = JSON.parse(m[1]); } catch { continue; }
+    try { parsed = JSON.parse(m[1]); }
+    catch {
+      try { parsed = JSON.parse(unescapeMarkdown(m[1])); }
+      catch { continue; }
+    }
     if (!parsed || typeof parsed !== 'object' || typeof parsed.gen !== 'number') continue;
     const start = /** @type {number} */ (m.index) + (m[0].startsWith('\n') ? 1 : 0);
     const state = { v: /** @type {1} */ (1), owner: typeof parsed.owner === 'string' ? parsed.owner : null, gen: parsed.gen, round: typeof parsed.round === 'number' ? parsed.round : 0 };
