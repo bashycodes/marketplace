@@ -1,0 +1,23 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/open/v1/task/{tid}",
+    "body": {
+      "content": "<1MB elided>"
+    }
+  },
+  "response": {
+    "status": 500,
+    "body": {
+      "errorId": "ikapi3st@erver-15",
+      "errorCode": "app_runtime",
+      "errorMessage": "task is too long",
+      "data": null
+    }
+  },
+  "summary": {
+    "sent": 1048581,
+    "get_bytes": 262149,
+    "intact": false
+  }
+}

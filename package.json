@@ -1,0 +1,16 @@
+{
+  "name": "bashy-marketplace-dev",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test tests/unit/*.test.mjs",
+    "test:it": "TT_GRILL_IT=1 node --test tests/it/*.test.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "validate": "claude plugin validate plugins/grill-over-ticktick && claude plugin validate ."
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

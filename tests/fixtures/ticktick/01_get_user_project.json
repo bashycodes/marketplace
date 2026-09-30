@@ -1,0 +1,25 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/open/v1/user/project",
+    "body": null
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "Date": "Fri, 25 Sep 2026 13:07:21 GMT",
+      "Content-Length": "0",
+      "Connection": "close",
+      "Set-Cookie": "<scrubbed>",
+      "Vary": "Access-Control-Request-Headers",
+      "X-Content-Type-Options": "nosniff",
+      "X-XSS-Protection": "1; mode=block",
+      "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0",
+      "Strict-Transport-Security": "max-age=31536000 ; includeSubDomains",
+      "X-Frame-Options": "DENY"
+    },
+    "body": null
+  }
+}

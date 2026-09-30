@@ -1,0 +1,87 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/open/v1/task/{tid}",
+    "body": {
+      "id": "6ab672a68f08f1c96f03606f",
+      "projectId": "6ab672198f087177091fad1a",
+      "items": [
+        {
+          "id": "6ab672a68f08f1c96f036070",
+          "title": "9b-1",
+          "status": 1
+        },
+        {
+          "id": "6ab672a68f08f1c96f036071",
+          "title": "9b-2",
+          "status": 1
+        },
+        {
+          "id": "6ab672a68f08f1c96f036072",
+          "title": "9b-3",
+          "status": 1
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Date": "Fri, 25 Sep 2026 13:10:02 GMT",
+      "Content-Type": "application/json;charset=UTF-8",
+      "Transfer-Encoding": "chunked",
+      "Connection": "close",
+      "Set-Cookie": "<scrubbed>",
+      "Vary": "origin,access-control-request-method,access-control-request-headers,accept-encoding",
+      "X-Frame-Options": "DENY",
+      "Strict-Transport-Security": "max-age=31536000 ; includeSubDomains",
+      "X-Content-Type-Options": "nosniff",
+      "X-XSS-Protection": "1; mode=block",
+      "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0"
+    },
+    "body": {
+      "id": "6ab672a68f08f1c96f03606f",
+      "projectId": "6ab672198f087177091fad1a",
+      "sortOrder": -4398046511104,
+      "title": "zz-tt-grill-spike-checklist-9b",
+      "timeZone": "Asia/Jerusalem",
+      "isAllDay": false,
+      "priority": 0,
+      "isFloating": false,
+      "status": 0,
+      "items": [
+        {
+          "id": "6ab672a68f08f1c96f036070",
+          "status": 1,
+          "title": "9b-1",
+          "sortOrder": 0,
+          "isAllDay": false,
+          "timeZone": "Asia/Jerusalem"
+        },
+        {
+          "id": "6ab672a68f08f1c96f036071",
+          "status": 1,
+          "title": "9b-2",
+          "sortOrder": 0,
+          "isAllDay": false,
+          "timeZone": "Asia/Jerusalem"
+        },
+        {
+          "id": "6ab672a68f08f1c96f036072",
+          "status": 1,
+          "title": "9b-3",
+          "sortOrder": 0,
+          "isAllDay": false,
+          "timeZone": "Asia/Jerusalem"
+        }
+      ],
+      "etag": "zw3287fr",
+      "etimestamp": 1790341802171,
+      "kind": "CHECKLIST",
+      "modifiedTime": "2026-09-25T13:09:58.558+0000",
+      "createdTime": "2026-09-25T13:09:58.558+0000"
+    }
+  }
+}

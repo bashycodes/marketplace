@@ -7,6 +7,18 @@
   },
   "plugins": [
     {
+      "name": "grill-over-ticktick",
+      "source": "./plugins/grill-over-ticktick",
+      "description": "Relay /grill-me rounds to TickTick and answer from your phone.",
+      "version": "1.0.0",
+      "category": "productivity",
+      "keywords": [
+        "ticktick",
+        "grill-me",
+        "phone"
+      ]
+    },
+    {
       "name": "claude-bells",
       "source": "./plugins/claude-bells",
       "description": "😴/🔔 badge on the tmux tab + terminal bell when a Claude Code session needs you; silent while you watch.",

@@ -1,0 +1,24 @@
+#!/usr/bin/env node
+'use strict';
+// Kept syntax-agnostic (no require/import statements) so it runs as CommonJS or ESM, and
+// checks the Node version first so an old Node gets the standard JSON error, not a stack trace.
+if (Number(process.versions.node.split('.')[0]) < 20) {
+  process.stderr.write(JSON.stringify({ error: 'usage', message: 'tt-grill requires Node >= 20' }) + '\n');
+  process.exitCode = 2;
+} else {
+  let libDir = '';
+  Promise.all([import('node:path'), import('node:url'), import('node:fs')])
+    .then(([path, url, fs]) => {
+      const self = fs.realpathSync(process.argv[1]);
+      libDir = path.join(path.dirname(self), '..', 'lib');
+      return import(url.pathToFileURL(path.join(libDir, 'cli.mjs')).href);
+    })
+    .then((m) => m.main(process.argv.slice(2)))
+    .then((code) => { process.exitCode = code; })
+    .catch((err) => {
+      // A module of our own lib/ that cannot be found = a partial install, not a bug.
+      const missing = err && err.code === 'ERR_MODULE_NOT_FOUND' && libDir && String(err.message).includes(libDir);
+      const message = missing ? 'tt-grill install is incomplete (lib/ missing)' : String((err && err.message) || err);
+      process.stderr.write(JSON.stringify({ error: 'internal', message }) + '\n'); process.exitCode = 1;
+    });
+}
