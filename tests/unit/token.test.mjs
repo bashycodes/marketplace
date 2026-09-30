@@ -6,7 +6,20 @@ import { join } from 'node:path';
 import { tmpDir } from '../helpers/tmp.mjs';
 import { tokenPath, readToken, writeToken, promptHidden } from '../../plugins/grill-over-ticktick/lib/token.mjs';
 
-test('tokenPath', () => { assert.equal(tokenPath('/h'), '/h/.config/tt-grill/token'); });
+test('tokenPath', () => {
+  assert.equal(tokenPath('/h'), '/h/.config/tt-grill/token');
+  assert.equal(tokenPath('/h', {}), '/h/.config/tt-grill/token');
+  assert.equal(tokenPath('/h', { XDG_CONFIG_HOME: '/x' }), '/x/tt-grill/token');
+  assert.equal(tokenPath('/h', { XDG_CONFIG_HOME: '' }), '/h/.config/tt-grill/token');
+});
+
+test('XDG_CONFIG_HOME: writeToken and readToken use $XDG_CONFIG_HOME/tt-grill/token', async (t) => {
+  const home = tmpDir(t); const xdg = join(tmpDir(t), 'cfg'); const env = { XDG_CONFIG_HOME: xdg };
+  const p = await writeToken({ home, token: 'tt_FAKE', env });
+  assert.equal(p, join(xdg, 'tt-grill', 'token'));
+  assert.equal(await readToken({ env, home }), 'tt_FAKE');
+  await assert.rejects(readToken({ env: {}, home }), (/** @type {any} */ e) => e.exitCode === 5);
+});
 
 test('env wins over file; trimmed', async (t) => {
   const home = tmpDir(t);
@@ -96,8 +109,9 @@ test('writeToken removes its temp file when the rename fails', async (t) => {
 /** @returns {any} */
 function fakeTty() {
   const s = /** @type {any} */ (new EventEmitter());
-  s.isTTY = true; s.raw = null;
-  s.setRawMode = (/** @type {boolean} */ v) => { s.raw = v; }; s.resume = () => {}; s.pause = () => {}; s.setEncoding = () => {};
+  s.isTTY = true; s.raw = null; s.seq = [];
+  s.setRawMode = (/** @type {boolean} */ v) => { s.raw = v; s.seq.push(`raw:${v}`); };
+  const emit = s.emit.bind(s); s.emit = (/** @type {string} */ ev, /** @type {any[]} */ ...a) => { if (ev === 'data') s.seq.push('data'); return emit(ev, ...a); }; s.resume = () => {}; s.pause = () => {}; s.setEncoding = () => {};
   return s;
 }
 
@@ -138,4 +152,24 @@ test('promptHidden rejects on stdin error', async () => {
   stdin.emit('error', new Error('x'));
   await assert.rejects(p, (/** @type {any} */ e) => e.exitCode === 2);
   assert.equal(stdin.raw, false);
+});
+
+test('promptHidden turns raw mode on before any data is read, and off at the end', async () => {
+  const stdin = fakeTty();
+  const p = promptHidden(stdin, /** @type {any} */ ({ write() { return true; } }), 'x');
+  stdin.emit('data', 'a'); stdin.emit('data', '\r');
+  assert.equal(await p, 'a');
+  assert.deepEqual(stdin.seq, ['raw:true', 'data', 'data', 'raw:false']);
+});
+
+test('promptHidden: Ctrl-D aborts like Ctrl-C; ESC sequences (arrows etc.) and a lone ESC are swallowed', async () => {
+  const s1 = fakeTty();
+  const p1 = promptHidden(s1, /** @type {any} */ ({ write() { return true; } }), 'x');
+  s1.emit('data', 'ab\u0004');
+  await assert.rejects(p1, (/** @type {any} */ e) => e.exitCode === 2 && /aborted/.test(e.message));
+  assert.equal(s1.raw, false);
+  const s2 = fakeTty();
+  const p2 = promptHidden(s2, /** @type {any} */ ({ write() { return true; } }), 'x');
+  s2.emit('data', 'a\u001b[A\u001b[1;5Cb\u001b'); s2.emit('data', 'c\u001b[3~d\r');
+  assert.equal(await p2, 'abcd');
 });

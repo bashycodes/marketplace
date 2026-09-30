@@ -28,3 +28,9 @@ test('toExit redacts string values inside extra too, leaving non-strings untouch
   assert.equal(toExit(notFound('x', { note: 'tok123' }), ['tok123']).json.note, '[redacted]');
   assert.deepEqual(toExit(notFound('x', { count: 3, ok: false }), ['tok123']).json, { error: 'not_found', message: 'x', count: 3, ok: false });
 });
+
+test('toExit deep-redacts nested objects/arrays in extra, keeping other primitives', () => {
+  const e = toExit(apiError('x', { errorCode: { a: 'k tt_FAKE k', n: 1, deep: [{ s: 'tt_FAKE' }, 2, null, true] }, errorId: ['tt_FAKE'], count: 3 }), ['tt_FAKE']);
+  assert.deepEqual(e.json, { error: 'api', message: 'x', errorCode: { a: 'k [redacted] k', n: 1, deep: [{ s: '[redacted]' }, 2, null, true] }, errorId: ['[redacted]'], count: 3 });
+  assert.ok(!JSON.stringify(e.json).includes('tt_FAKE'));
+});

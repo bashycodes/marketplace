@@ -13,7 +13,7 @@ Never accept, display or read a token. The token is typed by the user in **their
    ```
    "${CLAUDE_PLUGIN_ROOT}/bin/tt-grill" auth
    ```
-   (or `"<absolute path>" auth` with the path you found). It prompts for the token without echoing it, checks it against TickTick and stores it at `~/.config/tt-grill/token` (mode 0600). Suggest `! "${CLAUDE_PLUGIN_ROOT}/bin/tt-grill" auth` only if their harness lets `!` commands attach to the terminal; otherwise a separate terminal window.
+   (or `"<absolute path>" auth` with the path you found). It prompts for the token without echoing it, checks it against TickTick and stores it at `~/.config/tt-grill/token` (or `$XDG_CONFIG_HOME/tt-grill/token` when that is set; mode 0600). Suggest `! "${CLAUDE_PLUGIN_ROOT}/bin/tt-grill" auth` only if their harness lets `!` commands attach to the terminal; otherwise a separate terminal window.
 2. **Verify:** when they say it is done, run `tt-grill auth status`. Expect `{"ok":true,"projects":N}`. Exit 5 → ask them to repeat step 1 (wrong or empty token). Exit 1 → network problem; show the message.
 3. **Smart list:** ask whether they have a smart list named "🔥 Grill inbox" filtering on tag `grill`. If not: TickTick → Smart Lists → + → name `🔥 Grill inbox`, condition Tag = `grill`, save.
 4. **Test round:** `tt-grill takeover --effort "setup-test"`; `<O>` below is the `owner` field of that command's JSON output. Then push (see `${CLAUDE_PLUGIN_ROOT}/references/round-schema.md`):

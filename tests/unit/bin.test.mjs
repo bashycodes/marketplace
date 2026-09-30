@@ -32,9 +32,20 @@ test('--help → exit 0 and lists every command', () => {
   for (const c of ['auth', 'efforts', 'push', 'pull', 'close', 'takeover', 'wait', 'finish']) assert.match(r.out, new RegExp(`\\b${c}\\b`));
 });
 
-test('no args → same as --help but exit 2', () => {
+test('no args → help on stderr, exit 2, stdout empty', () => {
   const r = run([]);
   assert.equal(r.code, 2);
+  assert.equal(r.out, ''); assert.match(r.err, /tt-grill takeover/);
+});
+
+test('bin without its lib/ → exit 1 with a clear "install is incomplete" JSON error', async (t) => {
+  const { mkdtempSync, mkdirSync, copyFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const root = mkdtempSync(join(tmpdir(), 'tt-bin-')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, 'bin')); copyFileSync(BIN, join(root, 'bin', 'tt-grill'));
+  const r = spawnSync(process.execPath, [join(root, 'bin', 'tt-grill'), '--help'], { env: { PATH: process.env.PATH, HOME: '/nonexistent-home' }, encoding: 'utf8' });
+  assert.equal(r.status, 1); assert.equal(r.stdout, '');
+  assert.deepEqual(JSON.parse(r.stderr), { error: 'internal', message: 'tt-grill install is incomplete (lib/ missing)' });
 });
 
 test('Node < 20 → exit 2 with the standard usage JSON, before any module is loaded', () => {

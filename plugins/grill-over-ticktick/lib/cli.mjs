@@ -6,7 +6,7 @@ import { toExit, usage, asArray } from './errors.mjs';
 import { readToken, writeToken, promptHidden } from './token.mjs';
 import { createApi } from './api.mjs';
 import { defaultStateDir } from './pushlog.mjs';
-import { takeover, push, pull, close, finish, efforts, requireLayout } from './rounds.mjs';
+import { takeover, push, pull, close, finish, efforts, requireLayout, OWNER_RE } from './rounds.mjs';
 import { wait, parseDuration, DEFAULTS } from './wait.mjs';
 import { checkEffort } from './state.mjs';
 
@@ -26,7 +26,7 @@ export const HELP = `tt-grill — relay grilling rounds to TickTick (JSON in/out
 
 exit codes: 0 ok · 1 error · 2 usage · 3 taken over · 4 gave up waiting · 5 auth · 6 not found
 effort names: ^[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,58}[A-Za-z0-9._-])?$
-env: TICKTICK_TOKEN (CI/cloud only), TT_GRILL_DEBUG=1, XDG_STATE_HOME
+env: TICKTICK_TOKEN (CI/cloud only), TT_GRILL_DEBUG=1, XDG_CONFIG_HOME (token), XDG_STATE_HOME (pushlog)
 `;
 
 /**
@@ -50,7 +50,8 @@ export async function readStdin(stdin) {
   /** @type {Buffer[]} */
   const chunks = [];
   for await (const c of stdin) chunks.push(typeof c === 'string' ? Buffer.from(c, 'utf8') : c);
-  return Buffer.concat(chunks).toString('utf8');
+  const text = Buffer.concat(chunks).toString('utf8');
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;   // a UTF-8 BOM (e.g. PowerShell pipes) is not JSON
 }
 
 /**
@@ -74,7 +75,9 @@ export async function main(argv, io = {}) {
 
   const cmd = argv[0];
   if (cmd === '--help' || cmd === '-h' || cmd === 'help') { stdout.write(HELP); return 0; }
-  if (!cmd) { stdout.write(HELP); return 2; }
+  // No command is a failure: help goes to stderr so stdout stays JSON-only on every failure.
+  if (!cmd) { stderr.write(HELP); return 2; }
+  if (COMMANDS.includes(cmd) && argv.slice(1).some((a) => a === '--help' || a === '-h')) { stdout.write(HELP); return 0; }
 
   try {
     if (!COMMANDS.includes(cmd)) throw usage(`unknown command: ${cmd}`);
@@ -91,7 +94,12 @@ export async function main(argv, io = {}) {
     } else if (positionals.length) {
       throw usage(`unexpected argument: ${positionals[0]}`);
     }
-    const need = (/** @type {'effort' | 'owner'} */ name) => { const v = values[name]; if (!v) throw usage(`--${name} is required for ${cmd}`); return name === 'effort' ? checkEffort(v) : v; };
+    const need = (/** @type {'effort' | 'owner'} */ name) => {
+      const v = values[name]; if (!v) throw usage(`--${name} is required for ${cmd}`);
+      if (name === 'effort') return checkEffort(v);
+      if (!OWNER_RE.test(v)) throw usage(`--owner must match ^o_[a-z2-7]{6}$ (the owner printed by takeover), got ${JSON.stringify(v.slice(0, 40))}`);
+      return v;
+    };
     const readJson = async () => {
       if (stdin.isTTY) throw usage(`${cmd} expects JSON on stdin`);
       const text = await readStdin(stdin);
@@ -113,7 +121,7 @@ export async function main(argv, io = {}) {
           const token = (await promptHidden(stdin, stderr, 'TickTick API token: ')).trim();
           if (!token) throw usage('empty token');
           await apiFor(token).get('/project');
-          const path = await writeToken({ home, token });
+          const path = await writeToken({ home, token, env });
           result = { ok: true, path };
         }
         break;

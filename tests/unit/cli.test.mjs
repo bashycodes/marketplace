@@ -69,14 +69,14 @@ test('usage errors: missing --effort, missing --owner, unknown flag, bad stdin j
   let r = await run(['pull']); assert.equal(r.code, 2); assert.equal(r.out, ''); assert.match(r.ejson.message, /--effort is required for pull/);
   r = await run(['push', '--effort', 'e'], '{}'); assert.equal(r.code, 2); assert.match(r.ejson.message, /--owner is required for push/);
   r = await run(['pull', '--effort', 'e', '--bogus']); assert.equal(r.code, 2);
-  r = await run(['push', '--effort', 'e', '--owner', 'o'], '{nope'); assert.equal(r.code, 2); assert.match(r.ejson.message, /stdin is not valid JSON/);
-  r = await run(['wait', '--effort', 'e', '--owner', 'o', '--every', 'soon']); assert.equal(r.code, 2); assert.match(r.ejson.message, /bad duration/);
-  r = await run(['wait', '--effort', 'e', '--owner', 'o', '--every', '0s']); assert.equal(r.code, 2);
+  r = await run(['push', '--effort', 'e', '--owner', 'o_aaaaaa'], '{nope'); assert.equal(r.code, 2); assert.match(r.ejson.message, /stdin is not valid JSON/);
+  r = await run(['wait', '--effort', 'e', '--owner', 'o_aaaaaa', '--every', 'soon']); assert.equal(r.code, 2); assert.match(r.ejson.message, /bad duration/);
+  r = await run(['wait', '--effort', 'e', '--owner', 'o_aaaaaa', '--every', '0s']); assert.equal(r.code, 2);
 });
 
 test('push with a TTY stdin (no piped input) → usage, exit 2', async (t) => {
   const { run } = await harness(t);
-  const r = await run(['push', '--effort', 'e', '--owner', 'o'], undefined, { isTTY: true });
+  const r = await run(['push', '--effort', 'e', '--owner', 'o_aaaaaa'], undefined, { isTTY: true });
   assert.equal(r.code, 2); assert.equal(r.out, ''); assert.match(r.ejson.message, /push expects JSON on stdin/);
 });
 
@@ -167,7 +167,7 @@ test('full flow: takeover → push → pull → close → finish; pull of unknow
   r = await run(['push', '--effort', 'e', '--owner', owner], JSON.stringify(ROUND)); assert.equal(r.code, 0);
   assert.deepEqual(r.json.questions.map((/** @type {any} */ q) => [q.key, q.created]), [['r1.1', true]]);
   const taskId = r.json.questions[0].taskId;
-  r = await run(['push', '--effort', 'e', '--owner', 'o_other'], JSON.stringify(ROUND)); assert.equal(r.code, 3); assert.equal(r.out, ''); assert.equal(r.ejson.error, 'taken_over');
+  r = await run(['push', '--effort', 'e', '--owner', 'o_zzzzzz'], JSON.stringify(ROUND)); assert.equal(r.code, 3); assert.equal(r.out, ''); assert.equal(r.ejson.error, 'taken_over');
   tt.tick(taskId, 'b');
   r = await run(['pull', '--effort', 'e']); assert.equal(r.code, 0);
   assert.equal(r.json.questions[0].signal, 'tick'); assert.equal(r.json.host.owner, owner); assert.equal(r.json.truncated, false);
@@ -239,4 +239,31 @@ test('every --effort is checked against the effort-name rule before the token is
     assert.equal(r.code, 2, argv.join(' ')); assert.equal(r.out, ''); assert.match(r.ejson.message, /effort name must match/);
   }
   assert.equal(existsSync(`${home}/.config/tt-grill/token`), false);
+});
+
+test('--owner must match ^o_[a-z2-7]{6}$ (exit 2, before the token is read)', async (t) => {
+  const { run } = await harness(t, { token: false });
+  for (const bad of ['o', 'o_other', 'o_ABCDEF', 'o_abcde1', 'o_abcdefg', 'x_abcdef', 'o_abc"ef']) {
+    for (const cmd of ['push', 'close', 'wait', 'finish']) {
+      const r = await run([cmd, '--effort', 'e', '--owner', bad], '{}');
+      assert.equal(r.code, 2, `${cmd} ${bad}`); assert.equal(r.out, ''); assert.match(r.ejson.message, /--owner must match \^o_\[a-z2-7\]\{6\}\$/);
+    }
+  }
+});
+
+test('<cmd> --help / -h prints help (exit 0); no args → help on stderr, exit 2, stdout empty', async (t) => {
+  const { run } = await harness(t, { token: false });
+  for (const argv of [['push', '--help'], ['wait', '-h'], ['pull', '--effort', 'e', '--help']]) {
+    const r = await run(argv); assert.equal(r.code, 0, argv.join(' ')); assert.match(r.out, /tt-grill wait --effort E/);
+  }
+  let out = '', err = '';
+  const code = await main([], { stdout: /** @type {any} */ ({ write: (/** @type {string} */ s) => { out += s; return true; } }), stderr: /** @type {any} */ ({ write: (/** @type {string} */ s) => { err += s; return true; } }), env: {}, home: '/nonexistent' });
+  assert.equal(code, 2); assert.equal(out, ''); assert.match(err, /tt-grill takeover --effort E/);
+});
+
+test('stdin JSON with a leading UTF-8 BOM is accepted', async (t) => {
+  const { run } = await harness(t);
+  let r = await run(['takeover', '--effort', 'e']); const owner = r.json.owner;
+  r = await run(['push', '--effort', 'e', '--owner', owner], ['\uFEFF' + JSON.stringify(ROUND)]); assert.equal(r.code, 0, r.err);
+  r = await run(['close', '--effort', 'e', '--owner', owner], [Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('{}')]); assert.equal(r.code, 0, r.err);
 });

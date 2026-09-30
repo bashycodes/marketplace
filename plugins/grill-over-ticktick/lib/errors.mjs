@@ -34,13 +34,24 @@ export const authError = (msg = AUTH_MESSAGE) => new TtError('auth', msg, EXIT.A
 export const notFound = (msg, extra) => new TtError('not_found', msg, EXIT.NOT_FOUND, extra);
 
 /**
+ * Walk objects/arrays: strings are redacted, other primitives kept (server-shaped `extra` may nest).
+ * @param {unknown} v @param {readonly string[]} secrets @returns {unknown}
+ */
+function deepRedact(v, secrets) {
+  if (typeof v === 'string') return redact(v, secrets);
+  if (Array.isArray(v)) return v.map((x) => deepRedact(x, secrets));
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, deepRedact(x, secrets)]));
+  return v;
+}
+
+/**
  * @param {unknown} err
  * @param {readonly string[]} [secrets]
  * @returns {{ exitCode: number, json: { error: string, message: string, [k: string]: unknown } }}
  */
 export function toExit(err, secrets = []) {
   if (err instanceof TtError) {
-    const extra = Object.fromEntries(Object.entries(err.extra).map(([k, v]) => [k, typeof v === 'string' ? redact(v, secrets) : v]));
+    const extra = /** @type {Record<string, unknown>} */ (deepRedact(err.extra, secrets));
     return { exitCode: err.exitCode, json: { error: err.code, message: redact(err.message, secrets), ...extra } };
   }
   const message = err instanceof Error ? err.message : String(err);

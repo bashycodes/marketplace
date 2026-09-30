@@ -4,8 +4,12 @@ import { authError, usage, NO_TOKEN_MESSAGE, TtError, EXIT } from './errors.mjs'
 
 /** @typedef {Pick<typeof nodeFs, 'mkdir' | 'writeFile' | 'readFile' | 'chmod' | 'lstat' | 'rename' | 'unlink'>} TokenFs */
 
-/** @param {string} home @returns {string} */
-export function tokenPath(home) { return join(home, '.config', 'tt-grill', 'token'); }
+/**
+ * `$XDG_CONFIG_HOME/tt-grill/token` when XDG_CONFIG_HOME is set, else `~/.config/tt-grill/token`.
+ * @param {string} home @param {NodeJS.ProcessEnv | Record<string, string | undefined>} [env]
+ * @returns {string}
+ */
+export function tokenPath(home, env = {}) { return join(env.XDG_CONFIG_HOME || join(home, '.config'), 'tt-grill', 'token'); }
 
 /**
  * @param {{ env: NodeJS.ProcessEnv | Record<string, string | undefined>, home: string, fs?: TokenFs }} opts
@@ -16,10 +20,10 @@ export async function readToken({ env, home, fs = nodeFs }) {
   if (fromEnv) return fromEnv;
   let raw = '';
   try {
-    raw = await fs.readFile(tokenPath(home), 'utf8');
+    raw = await fs.readFile(tokenPath(home, env), 'utf8');
   } catch (/** @type {any} */ err) {
     if (err && err.code === 'ENOENT') { raw = ''; }
-    else throw new TtError('token_read', `cannot read ${tokenPath(home)}: ${err.code ?? err.message}`, EXIT.ERROR);
+    else throw new TtError('token_read', `cannot read ${tokenPath(home, env)}: ${err.code ?? err.message}`, EXIT.ERROR);
   }
   const tok = raw.trim();
   if (!tok) throw authError(NO_TOKEN_MESSAGE);
@@ -27,11 +31,11 @@ export async function readToken({ env, home, fs = nodeFs }) {
 }
 
 /**
- * @param {{ home: string, token: string, fs?: TokenFs }} opts
+ * @param {{ home: string, token: string, env?: NodeJS.ProcessEnv | Record<string, string | undefined>, fs?: TokenFs }} opts
  * @returns {Promise<string>} the path written
  */
-export async function writeToken({ home, token, fs = nodeFs }) {
-  const p = tokenPath(home);
+export async function writeToken({ home, token, env = {}, fs = nodeFs }) {
+  const p = tokenPath(home, env);
   await fs.mkdir(dirname(p), { recursive: true, mode: 0o700 });
   await fs.chmod(dirname(p), 0o700);
   // Never write through a symlink: the token would land in (and chmod) the link's target.
@@ -54,7 +58,8 @@ export async function writeToken({ home, token, fs = nodeFs }) {
 }
 
 /**
- * Raw-mode hidden prompt. Never echoes. Enter resolves, Backspace deletes, Ctrl-C rejects.
+ * Raw-mode hidden prompt. Never echoes. Enter resolves, Backspace deletes, Ctrl-C / Ctrl-D reject.
+ * ESC sequences (arrow keys etc.: ESC `[` params final-byte) and a lone ESC are ignored.
  * @param {any} stdin  (NodeJS.ReadStream-like: isTTY, setRawMode, resume, pause, setEncoding, on/off)
  * @param {NodeJS.WritableStream} stdout
  * @param {string} prompt
@@ -67,6 +72,8 @@ export function promptHidden(stdin, stdout, prompt) {
   return new Promise((resolve, reject) => {
     let buf = '';
     let done = false;
+    /** 0 = normal, 1 = just after ESC, 2 = inside `ESC [` until its final byte, 3 = one more char to drop (`ESC O x`) */
+    let esc = 0;
     const cleanup = () => {
       if (done) return;
       done = true;
@@ -80,11 +87,16 @@ export function promptHidden(stdin, stdout, prompt) {
     /** @param {string | Buffer} chunk */
     const onData = (chunk) => {
       for (const c of String(chunk)) {
+        if (esc === 1) { esc = c === '[' ? 2 : c === 'O' ? 3 : 0; continue; }   // ESC x (Alt-key): x dropped too
+        if (esc === 2) { if (c >= '\u0040' && c <= '\u007e') esc = 0; continue; }
+        if (esc === 3) { esc = 0; continue; }
+        if (c === '\u001b') { esc = 1; continue; }
         if (c === '\r' || c === '\n') { cleanup(); stdout.write('\n'); resolve(buf); return; }
-        if (c === '\u0003') { cleanup(); stdout.write('\n'); reject(usage('aborted')); return; }
+        if (c === '\u0003' || c === '\u0004') { cleanup(); stdout.write('\n'); reject(usage('aborted')); return; }
         if (c === '\u007f' || c === '\b') { buf = buf.slice(0, -1); continue; }
         buf += c;
       }
+      if (esc === 1) esc = 0;   // a lone ESC keypress arrives as its own chunk
     };
     const onEnd = () => { cleanup(); reject(usage('input closed before a token was entered')); };
     /** @param {Error} err */

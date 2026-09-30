@@ -7,7 +7,7 @@ All commands print one JSON value on stdout and `{"error":"<code>","message":"�
 |---|---|---|
 | 0 | ok | continue |
 | 1 | error (network exhausted, unexpected 5xx) | report; may retry the same command once |
-| 2 | usage (bad args / stray positional argument — only `auth status` takes one / effort name breaks the rule in `conventions.md` / bad stdin JSON / text > 100 000 chars / `takeover` on a non-empty list that is not a tt-grill list) | fix the input, do not retry blindly |
+| 2 | usage (bad args / stray positional argument — only `auth status` takes one / effort name breaks the rule in `conventions.md` / `--owner` not of the form `o_` + 6 chars of `a-z2-7` (use the owner `takeover` printed) / bad stdin JSON / text > 100 000 chars / `takeover` on a non-empty list that is not a tt-grill list) | fix the input, do not retry blindly |
 | 3 | taken over — another session owns this effort (or, from `wait`, `host has no state block; run takeover`) | stop this mode, tell the user (for the no-block case: run `takeover` again and continue) |
 | 4 | `wait` gave up (`--max` reached); stderr carries `{"error":"gave_up","message":"…","answered":N,"total":M}` over every not-yet-ingested question (any round) | tell the user (quote `answered`/`total`); offer to re-run `/grill-with-ticktick` |
 | 5 | auth (no token or 401) | point the user at `/setup-ticktick`; never ask for the token in chat |

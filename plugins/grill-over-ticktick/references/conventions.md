@@ -57,5 +57,5 @@ Not asked yet
 `takeover` writes a fresh `owner` (`o_` + 6 base32 chars) and `gen+1`. `push`, `close`, `wait` and `finish` refuse (exit 3) when the host's owner is not the `--owner` they were given. Both `/grill-with-ticktick` and `/grill-from-ticktick` start with `takeover`; that is how one session kicks another out of `wait`.
 
 ## Local files
-- Token: `~/.config/tt-grill/token` (0600) or `TICKTICK_TOKEN` (CI/cloud only). Never read by skills.
+- Token: `$XDG_CONFIG_HOME/tt-grill/token` when `XDG_CONFIG_HOME` is set, else `~/.config/tt-grill/token` (0600) or `TICKTICK_TOKEN` (CI/cloud only). Never read by skills.
 - Pushlog: `~/.local/state/tt-grill/<listId>.log` — makes `push` idempotent (re-runs never duplicate questions).

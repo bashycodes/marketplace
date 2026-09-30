@@ -27,6 +27,8 @@ export const FINAL = new Set(/** @type {Signal[]} */ ([...ANSWERED, 'done', 'won
 /** @param {string} id */
 const enc = (id) => encodeURIComponent(id);
 const OWNER_ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567';
+/** Shape of every owner `newOwner()` mints (`o_` + 6 chars of OWNER_ALPHABET). */
+export const OWNER_RE = /^o_[a-z2-7]{6}$/;
 
 /** @param {unknown} input @returns {Round} */
 export function validateRound(input) {
