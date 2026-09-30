@@ -27,7 +27,7 @@ test('fidelity vs recorded fixtures: /data is undone-only, tags lowercased, crea
   const p = await call('POST', '/project', { name: 'x' });
   const ids = [];
   for (const st of [0, 2, -1]) { const t = await call('POST', '/task', { title: `s${st}`, projectId: p.id }); if (st) tt.setStatus(t.id, st); ids.push(t.id); }
-  assert.deepEqual((await call('GET', `/project/${p.id}/data`)).tasks.map((/** @type {any} */ t) => t.status), [0]);
+  assert.deepEqual((await call('GET', `/project/${p.id}/data`, undefined)).tasks.map((/** @type {any} */ t) => t.status), [0]);
   assert.deepEqual((await call('POST', '/task/filter', { projectIds: [p.id] })).map((/** @type {any} */ t) => t.status).sort(), [-1, 0, 2]);
   // (b) tags are lowercased on create
   const fx = fixture('15_create_task_mixedcase_tag');
