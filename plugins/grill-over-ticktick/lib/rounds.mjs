@@ -1,0 +1,421 @@
+import { findLayout, ensureLayout, ensureTag, listEfforts, archiveList, TAG } from './layout.mjs';
+import { buildDesc, parseDesc, buildItems, classifyItems, KEY_RE, OTHER_TITLE, REC_PREFIX, LINK_FIELD, nextLine, taskUrl, prefixTitle, parseTitlePrefix } from './desc.mjs';
+import { readBlock, writeBlock, renderHostProse, hostTitle, isValidEffort, EFFORT_RULE } from './state.mjs';
+import { createPushlog } from './pushlog.mjs';
+import { usage, notFound, takenOver, serverId, asArray } from './errors.mjs';
+
+/** @typedef {import('./api.mjs').Api} Api */
+/** @typedef {import('./log.mjs').Logger} Logger */
+/** @typedef {import('./layout.mjs').Layout} Layout */
+/** @typedef {import('./state.mjs').HostState} HostState */
+/** @typedef {{ key: string, title: string, context: string, rec: { label: string, why: string }, options: string[] }} Question */
+/** @typedef {{ effort: string, round: number, host: import('./state.mjs').HostProse, questions: Question[] }} Round */
+/** @typedef {'none'|'tick'|'text'|'tick+text'|'other-only'|'done'|'wontdo'|'missing'|'unknown'} Signal */
+/* `unknown`: in the pushlog but absent from a truncated filter (≥ 200 tasks) — it may still exist; leave it alone. */
+/** @typedef {ReturnType<typeof classifyItems>} Items */
+/** @typedef {{ key: string, taskId: string, etag: string | null, status: number | null, title: string | null, position: number | null, total: number | null, items: Items, desc: string | null, descChanged: boolean, answerText: string | null, signal: Signal, ingested: boolean }} PulledQuestion */
+/* `title`: as stored (with the `[i/N] ` prefix push adds); `position`/`total`: parsed from that prefix, null when absent (older tasks). */
+/* `ingested`: the pushlog has an `ingested <key>` line, i.e. a previous `close` set this question to answered (2) or won't-do (−1). False when unknown. */
+/** @typedef {{ host: { id: string, etag: string | null, owner: string | null, gen: number, round: number, body: string, prose: string, hasBlock: boolean }, questions: PulledQuestion[], truncated: boolean }} PullResult */
+/** @typedef {{ api: Api, effort: string, pushlogDir: string, log: Logger, random?: () => number, layout?: Layout }} Ctx */
+
+export const MAX_TEXT = 100000;
+export const FILTER_CAP = 200;
+export const ANSWERED = new Set(/** @type {Signal[]} */ (['tick', 'text', 'tick+text']));
+export const TOUCHED = new Set(/** @type {Signal[]} */ ([...ANSWERED, 'other-only']));
+export const FINAL = new Set(/** @type {Signal[]} */ ([...ANSWERED, 'done', 'wontdo', 'missing']));
+/** @param {string} id */
+const enc = (id) => encodeURIComponent(id);
+const OWNER_ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567';
+/** Shape of every owner `newOwner()` mints (`o_` + 6 chars of OWNER_ALPHABET). */
+export const OWNER_RE = /^o_[a-z2-7]{6}$/;
+
+/** @param {unknown} input @returns {Round} */
+export function validateRound(input) {
+  const fail = (/** @type {string} */ m) => usage(`round JSON: ${m}`);
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw fail('expected an object');
+  const r = /** @type {any} */ (input);
+  if (!isValidEffort(r.effort)) throw fail(`effort: ${EFFORT_RULE}`);
+  if (!Number.isInteger(r.round) || r.round < 1) throw fail('round must be a positive integer');
+  const host = validateHost(r.host, fail);
+  if (!Array.isArray(r.questions) || r.questions.length === 0) throw fail('questions must be a non-empty array');
+  /** @type {Set<string>} */ const seen = new Set();
+  /** @type {Question[]} */ const questions = r.questions.map((/** @type {any} */ q, /** @type {number} */ i) => {
+    const at = `questions[${i}]`;
+    if (!q || typeof q !== 'object') throw fail(`${at} must be an object`);
+    if (typeof q.key !== 'string' || !KEY_RE.test(q.key)) throw fail(`${at}.key must match ^r\\d+\\.\\d+$`);
+    if (!q.key.startsWith(`r${r.round}.`)) throw fail(`${at}.key must start with "r${r.round}." (the round number)`);
+    if (seen.has(q.key)) throw fail(`duplicate key ${q.key}`);
+    seen.add(q.key);
+    if (typeof q.title !== 'string' || !q.title.trim() || q.title.length > 80) throw fail(`${at}.title must be 1–80 chars`);
+    if (typeof q.context !== 'string') throw fail(`${at}.context must be a string`);
+    const options = strList(q.options, `${at}.options`);
+    if (options.length === 0) throw fail(`${at}.options must have at least one entry`);
+    if (options.some((o) => !o.trim())) throw fail(`${at}.options must not contain an empty string`);
+    if (new Set(options).size !== options.length) throw fail(`${at}.options must not contain duplicate entries`);
+    if (options.some((o) => o.startsWith(REC_PREFIX))) throw fail(`${at}.options must not start with the recommended-item prefix "${REC_PREFIX}"`);
+    if (options.includes(OTHER_TITLE)) throw fail(`${at}.options must not equal the reserved Other item`);
+    if (!q.rec || typeof q.rec.label !== 'string' || typeof q.rec.why !== 'string') throw fail(`${at}.rec must be {label, why}`);
+    if (!options.includes(q.rec.label)) throw fail(`${at}.rec.label must be one of options`);
+    // Measure with a worst-case Next link (longest label, 64-char ids) so the cap holds for what push sends.
+    const next = { label: prefixTitle(q.title, r.questions.length, r.questions.length), url: taskUrl('x'.repeat(64), 'x'.repeat(64)) };
+    const desc = buildDesc({ key: q.key, context: q.context, rec: q.rec, next });
+    if (desc.length > MAX_TEXT) throw fail(`${at} desc exceeds ${MAX_TEXT} chars`);
+    return { key: q.key, title: q.title, context: q.context, rec: { label: q.rec.label, why: q.rec.why }, options };
+  });
+  // Measure the real body that will be written: prose wrapped in the state fence, with a
+  // representative owner/gen so the cap reflects what push actually sends, not just the prose.
+  const hostBody = writeBlock(renderHostProse({ effort: r.effort, host }), { v: 1, owner: 'o_xxxxxx', gen: 0, round: r.round });
+  if (hostBody.length > MAX_TEXT) throw fail(`host body exceeds ${MAX_TEXT} chars`);
+  return { effort: r.effort, round: r.round, host, questions };
+
+  /** @param {unknown} v @param {string} name @returns {string[]} */
+  function strList(v, name) { return strListOf(v, name, fail); }
+}
+
+/** @param {unknown} v @param {string} name @param {(m: string) => Error} fail @returns {string[]} */
+function strListOf(v, name, fail) {
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) throw fail(`${name} must be an array of strings`);
+  return v;
+}
+
+/**
+ * @param {unknown} h @param {(m: string) => Error} fail
+ * @returns {import('./state.mjs').HostProse}
+ */
+function validateHost(h, fail) {
+  if (!h || typeof h !== 'object' || Array.isArray(h)) throw fail('host must be an object {goal, decided, open, notAsked}');
+  const x = /** @type {any} */ (h);
+  return { goal: typeof x.goal === 'string' ? x.goal : '', decided: strListOf(x.decided, 'host.decided', fail), open: strListOf(x.open, 'host.open', fail), notAsked: strListOf(x.notAsked, 'host.notAsked', fail) };
+}
+
+/** @param {string} a @param {string} b */
+export function compareKeys(a, b) {
+  const pa = a.slice(1).split('.').map(Number), pb = b.slice(1).split('.').map(Number);
+  return pa[0] - pb[0] || pa[1] - pb[1];
+}
+
+/**
+ * @param {{ status: number, items: Items, descChanged: boolean }} q
+ * @returns {Signal}
+ */
+export function signalFor(q) {
+  if (q.status === -1) return 'wontdo';
+  const tick = q.items.some((i) => i.ticked && !i.isOther);
+  if (tick && q.descChanged) return 'tick+text';
+  if (tick) return 'tick';
+  if (q.descChanged) return 'text';
+  if (q.status === 2) return 'done';
+  if (q.items.some((i) => i.ticked && i.isOther)) return 'other-only';
+  return 'none';
+}
+
+/** @param {() => number} [random] @returns {string} */
+export function newOwner(random = Math.random) {
+  let s = 'o_';
+  for (let i = 0; i < 6; i++) s += OWNER_ALPHABET[Math.min(31, Math.floor(random() * 32))];
+  return s;
+}
+
+/**
+ * Read the host from `/project/{listId}/data` (not the single-task GET, which still returns a
+ * deleted task) so a host deleted in TickTick is a clean not-found (exit 6).
+ * @param {Api} api @param {Layout} layout @param {string} effort
+ */
+async function loadHost(api, layout, effort) {
+  const data = await api.get(`/project/${enc(layout.listId)}/data`);
+  const task = asArray(data?.tasks, 'list tasks').find((/** @type {any} */ t) => t.id === layout.hostId);
+  if (!task) throw notFound(`host "${hostTitle(effort)}" is gone from TickTick`, { effort });
+  const { prose, state, trailing } = readBlock(task.content);
+  return { task, prose, state, trailing };
+}
+
+/**
+ * One filter call → footer key → taskId for this host's children (first task wins per key).
+ * @param {Api} api @param {Layout} layout @returns {Promise<Map<string, string>>}
+ */
+async function childKeys(api, layout) {
+  const tasks = asArray(await api.post('/task/filter', { projectIds: [layout.listId], tag: [TAG] }), 'task filter');
+  /** @type {Map<string, string>} */ const out = new Map();
+  for (const t of tasks) { if (t.parentId !== layout.hostId) continue; const k = parseDesc(t.desc).key; if (k && !out.has(k)) out.set(k, serverId(t.id, 'task')); }
+  return out;
+}
+
+/** @param {Api} api @param {Layout} layout @param {string} prose @param {HostState} state @param {string} [trailing] */
+async function writeHost(api, layout, prose, state, trailing = '') {
+  await api.post(`/task/${enc(layout.hostId)}`, { id: layout.hostId, projectId: layout.listId, content: writeBlock(prose, state, trailing) });
+}
+
+/** @param {HostState | null} state @param {string} owner @param {string} effort */
+function assertOwner(state, owner, effort) {
+  const current = state?.owner ?? null;
+  if (current !== owner) throw takenOver(`effort "${effort}" is owned by ${current ?? 'nobody'}, not ${owner}`, { owner: current });
+}
+
+/**
+ * Resolve an effort to its layout, or throw not-found (exit 6). `ctx.layout` short-circuits
+ * the three GETs so `wait` can resolve once and then poll with one filter + one `/data` GET.
+ * @param {{ api: Api, effort: string, layout?: Layout }} ctx
+ * @returns {Promise<Layout>}
+ */
+export async function requireLayout(ctx) {
+  if (ctx.layout) return ctx.layout;
+  const layout = await findLayout(ctx.api, ctx.effort);
+  if (!layout) throw notFound(`effort "${ctx.effort}" not found in folder Claude`, { effort: ctx.effort });
+  return layout;
+}
+
+/**
+ * One filter call + pushlog → this host's questions, classified and sorted.
+ * @param {Ctx} ctx @param {Layout} layout
+ * @returns {Promise<{ questions: PulledQuestion[], truncated: boolean }>}
+ */
+async function fetchQuestions(ctx, layout) {
+  const pushlog = createPushlog({ dir: ctx.pushlogDir, listId: layout.listId });
+  const entries = await pushlog.load();
+  /** @type {Map<string, string>} */ const keyByTask = new Map();
+  for (const [key, e] of entries) if (e.taskId) keyByTask.set(e.taskId, key);
+  const tasks = asArray(await ctx.api.post('/task/filter', { projectIds: [layout.listId], tag: [TAG] }), 'task filter');
+  /** @type {Map<string, PulledQuestion>} */ const byKey = new Map();
+  for (const t of tasks) {
+    if (t.parentId !== layout.hostId) continue;
+    serverId(t.id, 'task');
+    const parsed = parseDesc(t.desc);
+    // The pushlog's own reverse lookup wins: it is what *this* CLI created this task for. The
+    // footer key is only a fallback for taskIds the pushlog doesn't know (e.g. a pre-pushlog
+    // task). If a task's footer disagrees with the pushlog, that's a forged/misattributed desc,
+    // not a real match — treat it the same as an edited answer for this question.
+    const key = keyByTask.get(t.id) ?? parsed.key ?? null;
+    if (!key) { ctx.log.debug(`ignoring unkeyed task ${t.id}`); continue; }
+    const items = classifyItems(t.items);
+    const descChanged = parsed.changed || parsed.key !== key;
+    const q = { key, taskId: t.id, etag: t.etag ?? null, status: t.status ?? 0, title: t.title ?? null, ...parseTitlePrefix(t.title), items, desc: t.desc ?? null, descChanged, answerText: parsed.answerText, signal: signalFor({ status: t.status ?? 0, items, descChanged }), ingested: entries.get(key)?.ingested ?? false };
+    const prev = byKey.get(key);
+    if (prev) { ctx.log.warn(`duplicate question ${key}: ${prev.taskId} and ${t.id}`); if (entries.get(key)?.taskId !== t.id) continue; }
+    byKey.set(key, q);
+  }
+  // A truncated filter cannot prove absence: a pushlog key it did not return may still be live.
+  const truncated = tasks.length >= FILTER_CAP;
+  for (const [key, e] of entries) {
+    if (e.taskId && !byKey.has(key)) byKey.set(key, { key, taskId: e.taskId, etag: null, status: null, title: null, position: null, total: null, items: [], desc: null, descChanged: false, answerText: null, signal: truncated ? 'unknown' : 'missing', ingested: e.ingested });
+  }
+  const questions = [...byKey.values()].sort((a, b) => compareKeys(a.key, b.key));
+  return { questions, truncated };
+}
+
+/**
+ * @param {Ctx} ctx
+ * @returns {Promise<{ owner: string, gen: number, created: boolean, listId: string, hostId: string }>}
+ */
+export async function takeover(ctx) {
+  const layout = await ensureLayout(ctx.api, ctx.effort);
+  await ensureTag(ctx.api);
+  const { prose, state, trailing } = await loadHost(ctx.api, layout, ctx.effort);
+  // No readable state block (wiped/edited on the phone): rebuild `round` from the highest
+  // r<N> among the host's children so push's round guard still has a floor.
+  const round = state ? state.round : Math.max(0, ...[...(await childKeys(ctx.api, layout)).keys()].map((k) => Number(k.slice(1).split('.')[0])));
+  const owner = newOwner(ctx.random);
+  const next = { v: /** @type {1} */ (1), owner, gen: (state?.gen ?? 0) + 1, round };
+  // Last-write-wins: the server ignores etags, so a concurrent takeover between the GET
+  // above and this write is clobbered (accepted risk per spec).
+  await writeHost(ctx.api, layout, prose.trim() ? prose : hostTitle(ctx.effort), next, trailing);
+  return { owner, gen: next.gen, created: layout.created, listId: layout.listId, hostId: layout.hostId };
+}
+
+/**
+ * @param {Ctx & { owner: string, round: unknown }} args
+ * @returns {Promise<{ listId: string, hostId: string, owner: string, gen: number, round: number, questions: { key: string, taskId: string, created: boolean }[] }>}
+ */
+export async function push(args) {
+  const round = validateRound(args.round);
+  if (round.effort !== args.effort) throw usage(`round.effort "${round.effort}" does not match --effort "${args.effort}"`);
+  // Resolve the effort without creating it — an effort that was never taken over must fail
+  // (not found) rather than silently getting a fresh layout, and the owner check below must
+  // run before any write.
+  const layout = await requireLayout(args);
+  const { state } = await loadHost(args.api, layout, args.effort);
+  assertOwner(state, args.owner, args.effort);
+  const hostRound = state?.round ?? 0;
+  if (round.round < hostRound) throw usage(`round ${round.round} is behind the host (round ${hostRound})`);
+
+  // Guards and adoption lookups run before any write.
+  const pushlog = createPushlog({ dir: args.pushlogDir, listId: layout.listId });
+  const entries = await pushlog.load();
+  // Footer key → taskId for the host's children, needed whenever some key has no taskId in
+  // the pushlog (crash between create and log line, or the pushlog file is gone entirely).
+  /** @type {Map<string, string>} */ const existing = round.questions.some((q) => !entries.get(q.key)?.taskId) ? await childKeys(args.api, layout) : new Map();
+  if (round.round > hostRound) {
+    const reused = round.questions.find((q) => entries.get(q.key)?.taskId || existing.has(q.key));
+    if (reused) throw usage(`key ${reused.key} already exists in TickTick; a new round must use new keys`);
+  }
+  await ensureTag(args.api);
+  // Re-read the owner immediately before the write (spec §3.2): a takeover during the lookups
+  // above must win, not be clobbered by this write.
+  const fresh = await loadHost(args.api, layout, args.effort);
+  assertOwner(fresh.state, args.owner, args.effort);
+  const next = { v: /** @type {1} */ (1), owner: args.owner, gen: fresh.state?.gen ?? 0, round: round.round };
+  // Last-write-wins: the server ignores etags, so a takeover in the few ms between this GET and
+  // the write is still clobbered (accepted risk per spec).
+  await writeHost(args.api, layout, renderHostProse({ effort: args.effort, host: round.host }), next, fresh.trailing);
+
+  // Titles get an `[i/N] ` prefix so a name-sorted list shows the round in order. Each desc links
+  // to the NEXT question (the last one back to the host), so questions are created last-first:
+  // the next task's id must exist before its predecessor's desc is written. Existing/adopted
+  // questions keep their desc as-is (never rewritten).
+  const n = round.questions.length;
+  /** @type {string[]} */ const ids = new Array(n);
+  /** @type {boolean[]} */ const made = new Array(n).fill(false);
+  for (let i = n - 1; i >= 0; i--) {
+    const q = round.questions[i];
+    const e = entries.get(q.key);
+    if (e?.taskId) { ids[i] = e.taskId; continue; }
+    const adopted = existing.get(q.key);
+    if (adopted) { await pushlog.created(q.key, adopted); ids[i] = adopted; continue; }
+    const next = i === n - 1
+      ? { label: hostTitle(args.effort), url: taskUrl(layout.listId, layout.hostId) }
+      : { label: prefixTitle(round.questions[i + 1].title, i + 2, n), url: taskUrl(layout.listId, ids[i + 1]) };
+    await pushlog.creating(q.key);
+    const t = await args.api.post('/task', {
+      title: prefixTitle(q.title, i + 1, n), projectId: layout.listId, parentId: layout.hostId, kind: 'CHECKLIST',
+      desc: buildDesc({ ...q, next: LINK_FIELD === 'desc' ? next : null }),
+      ...(LINK_FIELD === 'content' ? { content: nextLine(next) } : {}),
+      items: buildItems(q.options, q.rec.label), tags: [TAG],
+    }, { retry: false });   // never re-send a create: a re-run of push adopts it by footer
+    serverId(t?.id, 'task');   // before the id reaches the pushlog
+    await pushlog.created(q.key, t.id);
+    ids[i] = t.id; made[i] = true;
+  }
+  const questions = round.questions.map((q, i) => ({ key: q.key, taskId: ids[i], created: made[i] }));
+  return { listId: layout.listId, hostId: layout.hostId, owner: args.owner, gen: next.gen, round: round.round, questions };
+}
+
+/**
+ * @param {Ctx} ctx
+ * @returns {Promise<PullResult>}
+ */
+export async function pull(ctx) {
+  const layout = await requireLayout(ctx);
+  const { task, prose, state } = await loadHost(ctx.api, layout, ctx.effort);
+  const { questions, truncated } = await fetchQuestions(ctx, layout);
+  return {
+    host: { id: task.id, etag: task.etag ?? null, owner: state?.owner ?? null, gen: state?.gen ?? 0, round: state?.round ?? 0, body: task.content ?? '', prose, hasBlock: state !== null },
+    questions, truncated,
+  };
+}
+
+/**
+ * Order: validate input → owner check → host prose (optional) → status writes → owner re-check →
+ * `ingested` lines. Writing the host prose first makes the ingest durable in TickTick before
+ * anything is marked consumed; the re-check keeps a session that was taken over mid-close from
+ * consuming answers (its status writes stay un-ingested, so the new owner still sees them).
+ * @param {Ctx & { owner: string, input: unknown }} args
+ * @returns {Promise<{ closed: string[], wontdo: string[], reopened: string[], dropped: string[], skipped: string[] }>}
+ */
+export async function close(args) {
+  const inp = /** @type {any} */ (args.input);
+  if (!inp || typeof inp !== 'object' || Array.isArray(inp)) throw usage('close JSON: expected {answered?, wontdo?, reopen?, drop?, host?}');
+  const list = (/** @type {string} */ name) => { const v = inp[name]; if (v === undefined) return /** @type {string[]} */ ([]); if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) throw usage(`close JSON: ${name} must be an array of keys`); return v; };
+  const answered = list('answered'), wontdo = list('wontdo'), reopen = list('reopen'), drop = list('drop');
+  const host = inp.host === undefined ? null : validateHost(inp.host, (m) => usage(`close JSON: ${m}`));
+  /** @type {Set<string>} */ const seenKeys = new Set();
+  for (const key of [...answered, ...wontdo, ...reopen, ...drop]) {
+    if (seenKeys.has(key)) throw usage(`close JSON: key ${key} appears more than once`);
+    seenKeys.add(key);
+  }
+  const layout = await requireLayout(args);
+  const { state, trailing } = await loadHost(args.api, layout, args.effort);
+  assertOwner(state, args.owner, args.effort);
+  const hostBody = host && state ? writeBlock(renderHostProse({ effort: args.effort, host }), state, trailing) : '';
+  if (hostBody.length > MAX_TEXT) throw usage(`close JSON: host body exceeds ${MAX_TEXT} chars`);
+  // Resolve key → taskId the same way pull does: footer key first, pushlog reverse-lookup
+  // as fallback. The pushlog alone is not enough — it can be lost (other machine, wiped
+  // state dir) while the footer on the task itself survives.
+  const { questions, truncated } = await fetchQuestions(args, layout);
+  if (drop.length && truncated) throw usage('cannot drop while the filter is truncated');
+  const byKey = new Map(questions.filter((q) => q.signal !== 'missing' && q.signal !== 'unknown').map((q) => [q.key, q]));
+  const missing = new Set(questions.filter((q) => q.signal === 'missing').map((q) => q.key));
+  const out = { closed: /** @type {string[]} */ ([]), wontdo: /** @type {string[]} */ ([]), reopened: /** @type {string[]} */ ([]), dropped: /** @type {string[]} */ ([]), skipped: /** @type {string[]} */ ([]) };
+  const pushlog = createPushlog({ dir: args.pushlogDir, listId: layout.listId });
+  // Durable ingest: the decided/open prose lands on the host before any status write. Re-read
+  // the owner immediately before this write (spec §3.2, same as push before its writeHost):
+  // fetchQuestions above ran a `/task/filter` POST with retries, so a takeover in that gap must
+  // win, not be clobbered by a write carrying the stale owner/gen loaded before it.
+  if (host && state) {
+    const freshHost = await loadHost(args.api, layout, args.effort);
+    assertOwner(freshHost.state, args.owner, args.effort);
+    const next = { v: /** @type {1} */ (1), owner: args.owner, gen: freshHost.state?.gen ?? 0, round: freshHost.state?.round ?? 0 };
+    await writeHost(args.api, layout, renderHostProse({ effort: args.effort, host }), next, freshHost.trailing);
+  }
+  /** @type {string[]} */ const consumed = [];
+  /** @type {string[]} */ const reopenedKeys = [];
+  /** @param {string[]} keys @param {number} status @param {string[]} into */
+  const apply = async (keys, status, into) => {
+    for (const key of keys) {
+      const q = byKey.get(key);
+      if (!q) { out.skipped.push(key); continue; }
+      await args.api.post(`/task/${enc(q.taskId)}`, { id: q.taskId, projectId: layout.listId, status });
+      // Answered / won't-do means the skill has consumed this question; later pulls flag it so
+      // `wait` does not count it as a fresh answer. Reopen is not a consumption.
+      if (status !== 0) consumed.push(key); else reopenedKeys.push(key);
+      into.push(key);
+    }
+  };
+  await apply(answered, 2, out.closed);
+  await apply(wontdo, -1, out.wontdo);
+  await apply(reopen, 0, out.reopened);
+  // drop: a question deleted in TickTick (`missing`) is consumed locally — no API write, just
+  // the `ingested` line, so `wait` stops counting it and the skill never re-pushes it.
+  for (const key of drop) {
+    if (!missing.has(key)) { out.skipped.push(key); continue; }
+    consumed.push(key);
+    out.dropped.push(key);
+  }
+  if (consumed.length || reopenedKeys.length) {
+    const again = await loadHost(args.api, layout, args.effort);
+    assertOwner(again.state, args.owner, args.effort);
+    for (const key of consumed) await pushlog.ingested(key);
+    // A reopened question is unconsumed again (a later `reopened` line clears `ingested`), so
+    // an answer given after the reopen is seen by pull/wait.
+    for (const key of reopenedKeys) await pushlog.reopened(key);
+  }
+  return out;
+}
+
+/**
+ * Archiving is the one destructive command, so it is owner-checked like push/close.
+ * @param {Ctx & { owner: string }} ctx
+ * @returns {Promise<{ effort: string, listId: string, prose: string, decisions: { key: string, title: string | null, signal: Signal, status: number | null, ticked: string[], answerText: string | null }[], archived: true }>}
+ */
+export async function finish(ctx) {
+  const layout = await requireLayout(ctx);
+  const { prose, state } = await loadHost(ctx.api, layout, ctx.effort);
+  assertOwner(state, ctx.owner, ctx.effort);
+  const { questions, truncated } = await fetchQuestions(ctx, layout);
+  if (truncated) throw usage('cannot finish while the filter is truncated; archive older efforts first');
+  const decisions = questions.filter((q) => q.signal !== 'missing' && q.signal !== 'unknown').map((q) => ({ key: q.key, title: q.title, signal: q.signal, status: q.status, ticked: q.items.filter((i) => i.ticked && !i.isOther).map((i) => i.title.replace(/^⭐ /, '')), answerText: q.answerText }));
+  // Re-read the owner right before the destructive write: fetchQuestions ran a filter POST with
+  // retries, and a takeover in that gap must win.
+  const fresh = await loadHost(ctx.api, layout, ctx.effort);
+  assertOwner(fresh.state, ctx.owner, ctx.effort);
+  await archiveList(ctx.api, layout.listId);
+  return { effort: ctx.effort, listId: layout.listId, prose, decisions, archived: true };
+}
+
+/**
+ * @param {{ api: Api, pushlogDir: string, log: Logger }} args
+ * @returns {Promise<{ effort: string, listId: string, hostId: string, owner: string | null, round: number, open: number, answered: number }[]>}
+ */
+export async function efforts(args) {
+  const lists = await listEfforts(args.api, args.log);
+  /** @type {{ effort: string, listId: string, hostId: string, owner: string | null, round: number, open: number, answered: number }[]} */ const out = [];
+  for (const l of lists) {
+    const layout = { groupId: '', listId: l.listId, columnId: null, hostId: l.hostId, created: false };
+    const { state } = await loadHost(args.api, layout, l.effort);
+    const { questions } = await fetchQuestions({ ...args, effort: l.effort }, layout);
+    out.push({ effort: l.effort, listId: l.listId, hostId: l.hostId, owner: state?.owner ?? null, round: state?.round ?? 0,
+      open: questions.filter((q) => q.signal === 'none' || q.signal === 'other-only').length,
+      answered: questions.filter((q) => ANSWERED.has(q.signal)).length });
+  }
+  return out;
+}

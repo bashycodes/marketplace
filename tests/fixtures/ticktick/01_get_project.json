@@ -1,0 +1,34 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/open/v1/project",
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Date": "Fri, 25 Sep 2026 13:07:22 GMT",
+      "Content-Type": "application/json;charset=UTF-8",
+      "Transfer-Encoding": "chunked",
+      "Connection": "close",
+      "Set-Cookie": "<scrubbed>",
+      "Vary": "origin,access-control-request-method,access-control-request-headers,accept-encoding",
+      "X-Frame-Options": "DENY",
+      "Strict-Transport-Security": "max-age=31536000 ; includeSubDomains",
+      "X-Content-Type-Options": "nosniff",
+      "X-XSS-Protection": "1; mode=block",
+      "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0"
+    },
+    "body": [
+      {
+        "id": "6a2bb0927c1a216603d98bb1",
+        "name": "👋Welcome",
+        "sortOrder": 0,
+        "viewMode": "list",
+        "kind": "TASK"
+      }
+    ]
+  }
+}

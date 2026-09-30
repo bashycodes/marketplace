@@ -1,0 +1,41 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/open/v1/task/{tid}",
+    "body": {
+      "id": "<tid>",
+      "projectId": "<pid>",
+      "content": "<16389 bytes elided>"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Date": "Fri, 25 Sep 2026 13:12:17 GMT",
+      "Content-Type": "application/json;charset=UTF-8",
+      "Transfer-Encoding": "chunked",
+      "Connection": "close",
+      "Set-Cookie": "<scrubbed>",
+      "Vary": "origin,access-control-request-method,access-control-request-headers,accept-encoding",
+      "X-Frame-Options": "DENY",
+      "Strict-Transport-Security": "max-age=31536000 ; includeSubDomains",
+      "X-Content-Type-Options": "nosniff",
+      "X-XSS-Protection": "1; mode=block",
+      "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0"
+    },
+    "body": "<elided>"
+  },
+  "summary": {
+    "sent_bytes": 16389,
+    "update_status": 200,
+    "update_body_if_error": null,
+    "resp_bytes": 16389,
+    "get_bytes": 16389,
+    "intact": true,
+    "sha_sent": "1229f29feb57b584",
+    "sha_got": "1229f29feb57b584",
+    "tail_got": "hijklmnopqrstuvwxyz-ünï-✓ line\n0123<END>"
+  }
+}
