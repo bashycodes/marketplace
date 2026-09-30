@@ -17,8 +17,12 @@ export function checkEffort(effort) {
   return /** @type {string} */ (effort);
 }
 
-/** A ```grill fence whose opener starts a line; group 1 = the JSON line(s), up to the first closing fence. */
-const BLOCK_RE = /(?:^|\n)```grill\n([\s\S]*?)\n```[ \t]*(?=\n|$)/g;
+/**
+ * A ```grill fence whose opener starts a line; group 1 = the JSON line(s), up to the first closing
+ * fence. The capture may not contain another ```grill opener, so a dangling opener (closing fence
+ * deleted or glued to text on the phone) cannot swallow a block appended after it.
+ */
+const BLOCK_RE = /(?:^|\n)```grill\n((?:(?!```grill\n)[\s\S])*?)\n```[ \t]*(?=\n|$)/g;
 
 /** @param {string} effort @returns {string} */
 export function hostTitle(effort) { return `📍 ${effort}`; }

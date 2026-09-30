@@ -42,6 +42,7 @@ export function validateRound(input) {
     const at = `questions[${i}]`;
     if (!q || typeof q !== 'object') throw fail(`${at} must be an object`);
     if (typeof q.key !== 'string' || !KEY_RE.test(q.key)) throw fail(`${at}.key must match ^r\\d+\\.\\d+$`);
+    if (!q.key.startsWith(`r${r.round}.`)) throw fail(`${at}.key must start with "r${r.round}." (the round number)`);
     if (seen.has(q.key)) throw fail(`duplicate key ${q.key}`);
     seen.add(q.key);
     if (typeof q.title !== 'string' || !q.title.trim() || q.title.length > 80) throw fail(`${at}.title must be 1–80 chars`);
@@ -345,6 +346,7 @@ export async function close(args) {
     await writeHost(args.api, layout, renderHostProse({ effort: args.effort, host }), next, freshHost.trailing);
   }
   /** @type {string[]} */ const consumed = [];
+  /** @type {string[]} */ const reopenedKeys = [];
   /** @param {string[]} keys @param {number} status @param {string[]} into */
   const apply = async (keys, status, into) => {
     for (const key of keys) {
@@ -353,7 +355,7 @@ export async function close(args) {
       await args.api.post(`/task/${enc(q.taskId)}`, { id: q.taskId, projectId: layout.listId, status });
       // Answered / won't-do means the skill has consumed this question; later pulls flag it so
       // `wait` does not count it as a fresh answer. Reopen is not a consumption.
-      if (status !== 0) consumed.push(key);
+      if (status !== 0) consumed.push(key); else reopenedKeys.push(key);
       into.push(key);
     }
   };
@@ -367,10 +369,13 @@ export async function close(args) {
     consumed.push(key);
     out.dropped.push(key);
   }
-  if (consumed.length) {
+  if (consumed.length || reopenedKeys.length) {
     const again = await loadHost(args.api, layout, args.effort);
     assertOwner(again.state, args.owner, args.effort);
     for (const key of consumed) await pushlog.ingested(key);
+    // A reopened question is unconsumed again (a later `reopened` line clears `ingested`), so
+    // an answer given after the reopen is seen by pull/wait.
+    for (const key of reopenedKeys) await pushlog.reopened(key);
   }
   return out;
 }
@@ -384,8 +389,13 @@ export async function finish(ctx) {
   const layout = await requireLayout(ctx);
   const { prose, state } = await loadHost(ctx.api, layout, ctx.effort);
   assertOwner(state, ctx.owner, ctx.effort);
-  const { questions } = await fetchQuestions(ctx, layout);
+  const { questions, truncated } = await fetchQuestions(ctx, layout);
+  if (truncated) throw usage('cannot finish while the filter is truncated; archive older efforts first');
   const decisions = questions.filter((q) => q.signal !== 'missing' && q.signal !== 'unknown').map((q) => ({ key: q.key, title: q.title, signal: q.signal, status: q.status, ticked: q.items.filter((i) => i.ticked && !i.isOther).map((i) => i.title.replace(/^⭐ /, '')), answerText: q.answerText }));
+  // Re-read the owner right before the destructive write: fetchQuestions ran a filter POST with
+  // retries, and a takeover in that gap must win.
+  const fresh = await loadHost(ctx.api, layout, ctx.effort);
+  assertOwner(fresh.state, ctx.owner, ctx.effort);
   await archiveList(ctx.api, layout.listId);
   return { effort: ctx.effort, listId: layout.listId, prose, decisions, archived: true };
 }

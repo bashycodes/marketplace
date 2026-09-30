@@ -80,3 +80,12 @@ test('createPushlog refuses a listId outside the server-id alphabet (no path tra
   await assert.rejects(log.creating('r1.1\ningested r1.2'), (/** @type {any} */ e) => e.exitCode === 1);
   assert.deepEqual(await log.load(), new Map());
 });
+
+test('reopened after ingested clears the flag; ingested after reopened sets it again', async (t) => {
+  const dir = tmpDir(t);
+  const log = createPushlog({ dir, listId: 'L1' });
+  await log.created('r1.1', 'T1'); await log.ingested('r1.1'); await log.reopened('r1.1');
+  await log.created('r1.2', 'T2'); await log.reopened('r1.2'); await log.ingested('r1.2');
+  assert.equal(readFileSync(join(dir, 'L1.log'), 'utf8'), 'r1.1 T1\ningested r1.1\nreopened r1.1\nr1.2 T2\nreopened r1.2\ningested r1.2\n');
+  assert.deepEqual(await log.load(), new Map([['r1.1', { taskId: 'T1', ingested: false }], ['r1.2', { taskId: 'T2', ingested: true }]]));
+});

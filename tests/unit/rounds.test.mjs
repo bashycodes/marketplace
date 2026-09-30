@@ -39,6 +39,7 @@ test('validateRound: accepts the sample; rejects each broken field with exit 2',
   bad((r) => { r.questions = []; }, /questions/);
   bad((r) => { r.questions[0].key = 'q1'; }, /key/);
   bad((r) => { r.questions[1].key = 'r2.1'; }, /duplicate/);
+  bad((r) => { r.questions[0].key = 'r1.9'; }, /questions\[0\]\.key must start with "r2\."/);
   bad((r) => { r.questions[0].title = 'x'.repeat(81); }, /title/);
   bad((r) => { r.questions[0].rec.label = 'nope'; }, /rec.label/);
   bad((r) => { r.questions[0].options = []; }, /options/);
@@ -319,7 +320,7 @@ test('close marks answered/wontdo keys ingested in the pushlog (not reopen, not 
   await close({ ...ctx, owner, input: { answered: ['r2.1'], wontdo: ['r2.2'], reopen: ['r2.3'] } });
   await close({ ...ctx, owner, input: { answered: ['r9.9'] } });
   const log = readFileSync(join(ctx.pushlogDir, `${listId}.log`), 'utf8');
-  assert.ok(log.endsWith('ingested r2.1\ningested r2.2\n'), log);
+  assert.ok(log.endsWith('ingested r2.1\ningested r2.2\nreopened r2.3\n'), log);
   tt.deleteTask(p.questions[1].taskId);
   r = await pull(ctx);
   assert.deepEqual(r.questions.map((q) => [q.key, q.signal, q.ingested]), [['r2.1', 'done', true], ['r2.2', 'missing', true], ['r2.3', 'none', false]]);
@@ -365,12 +366,16 @@ test('push refuses a round behind the host (exit 2) and a new round reusing an e
   let before = posts();
   await assert.rejects(push({ ...ctx, owner, round: { ...structuredClone(ROUND), round: 1, questions: [{ ...ROUND.questions[0], key: 'r1.1' }] } }), (/** @type {any} */ e) => e.exitCode === 2 && /round 1 is behind the host \(round 2\)/.test(e.message));
   assert.equal(posts(), before);
-  await assert.rejects(push({ ...ctx, owner, round: { ...structuredClone(ROUND), round: 3 } }), (/** @type {any} */ e) => e.exitCode === 2 && /key r2\.1 already exists in TickTick; a new round must use new keys/.test(e.message));
+  // keys of another round are refused up front (validateRound)
+  await assert.rejects(push({ ...ctx, owner, round: { ...structuredClone(ROUND), round: 3 } }), (/** @type {any} */ e) => e.exitCode === 2 && /key must start with "r3\."/.test(e.message));
   assert.equal(posts(), before);
-  // pushlog lost → the footer still catches the reuse
+  // a new round whose key already exists in TickTick (a stray r3.1 child, pushlog lost) → refused via the footer
   const { rmSync } = await import('node:fs');
   rmSync(join(ctx.pushlogDir, `${listId}.log`));
-  await assert.rejects(push({ ...ctx, owner, round: { ...structuredClone(ROUND), round: 3 } }), (/** @type {any} */ e) => e.exitCode === 2 && /already exists/.test(e.message));
+  const hostId = tt.db.tasks.find((x) => x.kind === 'NOTE').id;
+  tt.db.tasks.push({ id: 'stray', projectId: listId, parentId: hostId, title: 's', kind: 'CHECKLIST', status: 0, tags: ['grill'], etag: 'z', desc: buildDesc({ key: 'r3.1', context: 'c', rec: { label: 'a', why: 'w' } }) });
+  const R3 = { ...structuredClone(ROUND), round: 3, questions: ROUND.questions.map((q, i) => ({ ...q, key: `r3.${i + 1}` })) };
+  await assert.rejects(push({ ...ctx, owner, round: R3 }), (/** @type {any} */ e) => e.exitCode === 2 && /key r3\.1 already exists in TickTick; a new round must use new keys/.test(e.message));
   assert.equal(posts(), before);
   const r = await push({ ...ctx, owner, round: structuredClone(ROUND) });
   assert.deepEqual(r.questions.map((q) => q.created), [false, false]);
@@ -573,4 +578,39 @@ test('push: untouched descs with the Next link read descChanged:false; an answer
   const again = await push({ ...ctx, owner, round: structuredClone(three) });
   assert.deepEqual(again.questions, p.questions.map((q) => ({ ...q, created: false })));
   assert.ok(!tt.calls.slice(before).some((c) => c.method === 'POST' && c.path === '/task'));
+});
+
+test('close reopen of a consumed key writes `reopened` and the next pull sees ingested:false', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner, listId } = await takeover(ctx);
+  const p = await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  tt.tick(p.questions[0].taskId, 'env');
+  await close({ ...ctx, owner, input: { answered: ['r2.1'] } });
+  assert.equal((await pull(ctx)).questions[0].ingested, true);
+  const r = await close({ ...ctx, owner, input: { reopen: ['r2.1', 'r2.2'] } });
+  assert.deepEqual(r.reopened, ['r2.1', 'r2.2']);
+  const log = readFileSync(join(ctx.pushlogDir, `${listId}.log`), 'utf8');
+  assert.ok(log.endsWith('ingested r2.1\nreopened r2.1\nreopened r2.2\n'), log);
+  const q = (await pull(ctx)).questions[0];
+  assert.deepEqual([q.key, q.signal, q.ingested], ['r2.1', 'tick', false]);
+});
+
+test('finish re-checks the owner right before archiving: a takeover during fetchQuestions wins', async (t) => {
+  let steal = false;
+  const { tt, ctx } = hooked(t, async (_tt, path, init) => {
+    if (steal && path === '/task/filter' && init?.method === 'POST') { steal = false; await takeover({ ...ctx, random: () => 0.9 }); }
+  });
+  const { owner, listId } = await takeover(ctx);
+  await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  steal = true;
+  await assert.rejects(finish({ ...ctx, owner }), (/** @type {any} */ e) => e.exitCode === 3);
+  assert.notEqual(tt.db.projects.find((x) => x.id === listId).closed, true);
+});
+
+test('finish refuses while the filter is truncated (exit 2), archiving nothing', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner, listId, hostId } = await takeover(ctx);
+  for (let i = 0; i < 200; i++) tt.db.tasks.push({ id: `seed${i}`, projectId: listId, parentId: hostId, title: `s${i}`, kind: 'CHECKLIST', status: 0, tags: ['grill'], etag: 'z', desc: buildDesc({ key: `r1.${i + 1}`, context: 'c', rec: { label: 'a', why: 'w' } }) });
+  await assert.rejects(finish({ ...ctx, owner }), (/** @type {any} */ e) => e.exitCode === 2 && /truncated/.test(e.message));
+  assert.notEqual(tt.db.projects.find((x) => x.id === listId).closed, true);
 });

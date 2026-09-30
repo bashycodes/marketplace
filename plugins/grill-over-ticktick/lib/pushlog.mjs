@@ -12,7 +12,7 @@ const checkKey = (key) => { if (typeof key !== 'string' || !KEY_RE.test(key)) th
 
 /** @typedef {Pick<typeof nodeFs, 'mkdir' | 'appendFile' | 'readFile'>} LogFs */
 /** @typedef {{ taskId: string | null, ingested: boolean }} PushlogEntry */
-/** @typedef {{ path: string, creating: (key: string) => Promise<void>, created: (key: string, taskId: string) => Promise<void>, ingested: (key: string) => Promise<void>, load: () => Promise<Map<string, PushlogEntry>> }} Pushlog */
+/** @typedef {{ path: string, creating: (key: string) => Promise<void>, created: (key: string, taskId: string) => Promise<void>, ingested: (key: string) => Promise<void>, reopened: (key: string) => Promise<void>, load: () => Promise<Map<string, PushlogEntry>> }} Pushlog */
 
 /**
  * @param {NodeJS.ProcessEnv | Record<string, string | undefined>} env
@@ -48,6 +48,11 @@ export function createPushlog({ dir, listId, fs = nodeFs }) {
       checkKey(key);
       await append(`ingested ${key}`);
     },
+    // `reopened <key>`: close set this question back to 0; a later line wins over an earlier `ingested`.
+    reopened: async (key) => {
+      checkKey(key);
+      await append(`reopened ${key}`);
+    },
     async load() {
       /** @type {string} */
       let text = '';
@@ -70,6 +75,7 @@ export function createPushlog({ dir, listId, fs = nodeFs }) {
         const [a, b] = parts;
         if (a === 'creating' && KEY_RE.test(b)) { if (!map.has(b)) map.set(b, { taskId: null, ingested: false }); }
         else if (a === 'ingested' && KEY_RE.test(b)) { const e = map.get(b); if (e) e.ingested = true; else map.set(b, { taskId: null, ingested: true }); }
+        else if (a === 'reopened' && KEY_RE.test(b)) { const e = map.get(b); if (e) e.ingested = false; }
         else if (KEY_RE.test(a) && TASK_ID_RE.test(b)) map.set(a, { taskId: b, ingested: map.get(a)?.ingested ?? false });
       }
       return map;

