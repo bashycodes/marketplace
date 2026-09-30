@@ -118,3 +118,27 @@ test('listEfforts skips lists whose name is not a valid effort name', async () =
   assert.deepEqual((await listEfforts(api, log)).map((x) => x.effort), ['ok one']);
   assert.ok(lines.some((l) => /skipping list with an invalid effort name/.test(l)));
 });
+
+test('every takeover create (group, list, column, host, tag) is sent once: a 503 is not retried → exit 1', async () => {
+  /** @type {[string, (m: string, p: string) => boolean][]} */
+  const targets = [
+    ['group', (m, p) => m === 'POST' && p === '/project/group'],
+    ['list', (m, p) => m === 'POST' && p === '/project'],
+    ['column', (m, p) => m === 'POST' && /^\/project\/[^/]+\/column$/.test(p)],
+    ['host', (m, p) => m === 'POST' && p === '/task'],
+    ['tag', (m, p) => m === 'POST' && p === '/tag'],
+  ];
+  for (const [what, match] of targets) {
+    const tt = fakeTickTick(); let hits = 0;
+    const f = /** @type {typeof fetch} */ (async (url, init) => {
+      const p = new URL(String(url)).pathname.replace(/^\/open\/v1/, '');
+      if (match((init?.method ?? 'GET').toUpperCase(), p)) { hits++; return new Response('', { status: 503 }); }
+      return tt.fetch(url, init);
+    });
+    const log = createLogger({ stderr: /** @type {any} */ ({ write() { return true; } }) });
+    const api = createApi({ fetch: f, token: 'T', log, sleep: async () => {} });
+    const run = what === 'tag' ? ensureTag(api) : ensureLayout(api, 'e');
+    await assert.rejects(run, (/** @type {any} */ e) => e.exitCode === 1 && e.extra?.status === 503, what);
+    assert.equal(hits, 1, `${what} create sent ${hits} times`);
+  }
+});
