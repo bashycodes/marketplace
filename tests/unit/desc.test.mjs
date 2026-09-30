@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalise, hashText, buildDesc, parseDesc, buildItems, classifyItems, OTHER_TITLE, KEY_RE, prefixTitle, parseTitlePrefix, taskUrl, LINK_FIELD } from '../../plugins/grill-over-ticktick/lib/desc.mjs';
+import { normalise, hashText, buildDesc, parseDesc, buildItems, classifyItems, OTHER_TITLE, KEY_RE, prefixTitle, parseTitlePrefix, taskUrl, LINK_FIELD, nextLine } from '../../plugins/grill-over-ticktick/lib/desc.mjs';
 
 const Q = { key: 'r2.1', context: 'Where does the token live?\nTwo options matter.', rec: { label: '~/.config/tt-grill/token', why: 'survives uninstall' } };
 
@@ -135,4 +135,35 @@ test('prefixTitle / parseTitlePrefix', () => {
   assert.deepEqual(parseTitlePrefix('\\[12/30\\] x'), { position: 12, total: 30 });
   assert.deepEqual(parseTitlePrefix('Which columns?'), { position: null, total: null });
   assert.deepEqual(parseTitlePrefix(null), { position: null, total: null });
+});
+
+test('backslash-punctuation in context round-trips unchanged (normalised once)', () => {
+  for (const context of ['path a\\\\*b', 'C:\\\\(x)', 'C:\\(x)', 'regex \\\\d+ and \\\\server\\share']) {
+    for (const next of [null, { label: 'q2', url: taskUrl('p1', 't2') }]) {
+      const p = parseDesc(buildDesc({ ...Q, context, next }));
+      assert.equal(p.changed, false, `${context} next=${!!next}`);
+      assert.equal(p.answerText, '');
+      assert.equal(p.key, 'r2.1');
+    }
+  }
+});
+
+test('classifyItems tolerates a missing/null title', () => {
+  assert.deepEqual(classifyItems(/** @type {any} */ ([{}, { title: null, status: 1 }])), [
+    { title: '', ticked: false, isRec: false, isOther: false },
+    { title: '', ticked: true, isRec: false, isOther: false },
+  ]);
+});
+
+test('Next label: brackets after the [i/N] prefix go fullwidth; the link parses and hashes unchanged, even escaped', () => {
+  const next = { label: '[1/2] foo]bar [x] (y)', url: taskUrl('p1', 't2') };
+  assert.equal(nextLine(next), `Next → [[1/2] foo］bar ［x］ (y)](${next.url})`);
+  const d = buildDesc({ ...Q, next });
+  const p = parseDesc(d);
+  assert.equal(p.changed, false); assert.equal(p.answerText, '');
+  const lines = d.split('\n'); const footer = lines.pop();
+  const escaped = lines.join('\n').replace(/[()[\]#.\-]/g, (c) => `\\${c}`) + '\n' + footer;
+  assert.equal(parseDesc(escaped).changed, false);
+  const typed = d.replace('✍️ Answer:', '✍️ Answer: mine');
+  assert.equal(parseDesc(typed).answerText, 'mine');
 });

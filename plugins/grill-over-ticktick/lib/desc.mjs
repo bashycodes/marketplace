@@ -33,7 +33,12 @@ export function normalise(text) {
 
 /** @param {string} text @returns {string} */
 export function hashText(text) {
-  return createHash('sha256').update(normalise(text), 'utf8').digest('hex').slice(0, 8);
+  return hashNormalised(normalise(text));
+}
+
+/** Hash of text that is already normalised (normalise is not idempotent: never apply it twice). @param {string} text @returns {string} */
+export function hashNormalised(text) {
+  return createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 8);
 }
 
 /** @typedef {{ label: string, url: string }} NextLink */
@@ -43,9 +48,17 @@ export function taskUrl(listId, taskId) {
   return `https://ticktick.com/webapp/#p/${listId}/tasks/${taskId}`;
 }
 
-/** @param {NextLink} next @returns {string} */
+/**
+ * Brackets in the label after our own `[i/N] ` prefix become fullwidth `［］`, so a free-form title
+ * cannot close the link text early. Not backslash escapes: TickTick re-escapes punctuation on save
+ * and a stored `\]` would no longer hash as it was built. `)` is harmless inside link text.
+ * @param {NextLink} next @returns {string}
+ */
 export function nextLine({ label, url }) {
-  return `${NEXT_PREFIX}[${label}](${url})`;
+  const m = TITLE_PREFIX_RE.exec(label);
+  const pre = m ? m[0] : '';
+  const safe = pre + label.slice(pre.length).replace(/\[/g, '［').replace(/\]/g, '］');
+  return `${NEXT_PREFIX}[${safe}](${url})`;
 }
 
 /** @param {string} title @param {number} position 1-based @param {number} total @returns {string} */
@@ -79,10 +92,13 @@ export function parseDesc(desc) {
   if (!text) return { key: null, hash: null, body: '', changed: true, answerText: null };
   const lines = text.split('\n');
   const m = FOOTER_RE.exec(lines[lines.length - 1]);
-  const body = m ? normalise(lines.slice(0, -1).join('\n')) : text;
+  // `text` is already normalised: only drop the blank lines left above the footer.
+  const above = m ? lines.slice(0, -1) : lines;
+  while (above.length && above[above.length - 1] === '') above.pop();
+  const body = above.join('\n');
   const key = m ? m[1] : null;
   const hash = m ? m[2] : null;
-  const changed = !m || hashText(body) !== hash;
+  const changed = !m || hashNormalised(body) !== hash;
   const at = body.indexOf(ANSWER_MARKER);
   /** @type {string | null} */ let answerText = null;
   if (at >= 0) {
@@ -105,14 +121,14 @@ export function buildItems(options, recLabel) {
 }
 
 /**
- * @param {{ title: string, status?: number }[] | undefined | null} items
+ * @param {{ title?: string | null, status?: number }[] | undefined | null} items
  * @returns {{ title: string, ticked: boolean, isRec: boolean, isOther: boolean }[]}
  */
 export function classifyItems(items) {
   return (items ?? []).map((it) => ({
-    title: it.title,
+    title: it.title ?? '',
     ticked: it.status === 1,
-    isRec: it.title.startsWith(REC_PREFIX),
+    isRec: (it.title ?? '').startsWith(REC_PREFIX),
     isOther: it.title === OTHER_TITLE,
   }));
 }

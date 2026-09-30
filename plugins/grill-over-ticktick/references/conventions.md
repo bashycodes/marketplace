@@ -8,7 +8,7 @@ An effort name must match `^[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,58}[A-Za-z0-9._-])?$
 ## Layout
 - Folder **`Claude`** → one kanban **list per effort** (list title = effort name) → tasks → subtasks.
 - Each list has one column **`📍`**.
-- **Host** = a `kind: NOTE` task titled `📍 <effort>` in the `📍` column. Notes have no checkbox, so a stray tap cannot complete them.
+- **Host** = a `kind: NOTE` task titled `📍 <effort>` in the `📍` column. Notes have no checkbox, so a stray tap cannot complete them. It must stay undone: `GET /project/{id}/data` returns undone tasks only, so a host completed by other means (e.g. the web app) reads as not found (exit 6).
 - **Question** = a `CHECKLIST` subtask of the host (`parentId` = host), tagged **`grill`**. The user's smart list "🔥 Grill inbox" filters on that tag.
 - No dates, reminders or comments are ever used.
 - Only `takeover` creates the folder/list/host/tag when they are missing. `push`, `pull`, `close`, `wait` and `finish` all resolve an existing layout and fail with exit 6 (not found) if the effort was never taken over or its host note was deleted. The host is always read via `GET /project/{listId}/data` (never the single-task GET, which still returns deleted tasks); `pull` and every `wait` poll use it. Always `takeover` before the first `push` for an effort. `takeover` never converts a list the user already had: if a list with the effort's name exists in `Claude` without a `📍 <effort>` host and is not empty, it exits 2 (`list "<E>" exists in folder Claude but is not a tt-grill list; rename it or pick another effort`); an empty one is adopted.
@@ -28,7 +28,7 @@ An effort name must match `^[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,58}[A-Za-z0-9._-])?$
   ⌁ <key> <hash>
   ```
   The `Next →` line links to the next question of the round; the last question links back to the host: `Next → [📍 <effort>](https://ticktick.com/webapp/#p/<listId>/tasks/<hostId>)`. Because each desc needs the next task's id, `push` creates a round's questions last-first. (The link's field is the `LINK_FIELD` constant in `lib/desc.mjs`, currently `desc`; if it is flipped to `content`, the desc has no `Next →` line and the task's `content` is that line alone.)
-  `<key>` = `r<round>.<n>`; `<hash>` = first 8 hex of SHA-256 over the normalised text above the footer (the `Next →` line included) (CRLF→LF, trailing whitespace stripped, trailing blank lines dropped, and backslash-escapes TickTick inserts around markdown-special punctuation stripped before hashing). `pull` recomputes it: mismatch or missing footer ⇒ `descChanged: true` ⇒ the user typed something. `answerText` = the text between `✍️ Answer:` and the `Next →` line (or the footer when there is no `Next →` line).
+  `<key>` = `r<round>.<n>`; `<hash>` = first 8 hex of SHA-256 over the normalised text above the footer (the `Next →` line included) (CRLF→LF, trailing whitespace stripped, trailing blank lines dropped, and backslash-escapes TickTick inserts around markdown-special punctuation stripped before hashing). `pull` recomputes it: mismatch or missing footer ⇒ `descChanged: true` ⇒ the user typed something. `answerText` = the text between `✍️ Answer:` and the `Next →` line (or the footer when there is no `Next →` line); text typed below the `Next →` line or the footer is not read. In the `Next →` label, `[`/`]` after the `[i/N] ` prefix are written as fullwidth `［`/`］` so a title cannot break the link.
 - `items` = `⭐ <recommended>` first, then the other options in the given order, then `Other → type after ✍️`.
 
 ## Host body
