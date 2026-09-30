@@ -2,7 +2,7 @@ import { findLayout, ensureLayout, ensureTag, listEfforts, archiveList, TAG } fr
 import { buildDesc, parseDesc, buildItems, classifyItems, KEY_RE, OTHER_TITLE, REC_PREFIX, LINK_FIELD, nextLine, taskUrl, prefixTitle, parseTitlePrefix } from './desc.mjs';
 import { readBlock, writeBlock, renderHostProse, hostTitle, isValidEffort, EFFORT_RULE } from './state.mjs';
 import { createPushlog } from './pushlog.mjs';
-import { usage, notFound, takenOver, serverId } from './errors.mjs';
+import { usage, notFound, takenOver, serverId, asArray } from './errors.mjs';
 
 /** @typedef {import('./api.mjs').Api} Api */
 /** @typedef {import('./log.mjs').Logger} Logger */
@@ -123,7 +123,7 @@ export function newOwner(random = Math.random) {
  */
 async function loadHost(api, layout, effort) {
   const data = await api.get(`/project/${enc(layout.listId)}/data`);
-  const task = (data?.tasks ?? []).find((/** @type {any} */ t) => t.id === layout.hostId);
+  const task = asArray(data?.tasks, 'list tasks').find((/** @type {any} */ t) => t.id === layout.hostId);
   if (!task) throw notFound(`host "${hostTitle(effort)}" is gone from TickTick`, { effort });
   const { prose, state, trailing } = readBlock(task.content);
   return { task, prose, state, trailing };
@@ -134,7 +134,7 @@ async function loadHost(api, layout, effort) {
  * @param {Api} api @param {Layout} layout @returns {Promise<Map<string, string>>}
  */
 async function childKeys(api, layout) {
-  /** @type {any[]} */ const tasks = (await api.post('/task/filter', { projectIds: [layout.listId], tag: [TAG] })) ?? [];
+  const tasks = asArray(await api.post('/task/filter', { projectIds: [layout.listId], tag: [TAG] }), 'task filter');
   /** @type {Map<string, string>} */ const out = new Map();
   for (const t of tasks) { if (t.parentId !== layout.hostId) continue; const k = parseDesc(t.desc).key; if (k && !out.has(k)) out.set(k, serverId(t.id, 'task')); }
   return out;
@@ -174,7 +174,7 @@ async function fetchQuestions(ctx, layout) {
   const entries = await pushlog.load();
   /** @type {Map<string, string>} */ const keyByTask = new Map();
   for (const [key, e] of entries) if (e.taskId) keyByTask.set(e.taskId, key);
-  /** @type {any[]} */ const tasks = (await ctx.api.post('/task/filter', { projectIds: [layout.listId], tag: [TAG] })) ?? [];
+  const tasks = asArray(await ctx.api.post('/task/filter', { projectIds: [layout.listId], tag: [TAG] }), 'task filter');
   /** @type {Map<string, PulledQuestion>} */ const byKey = new Map();
   for (const t of tasks) {
     if (t.parentId !== layout.hostId) continue;

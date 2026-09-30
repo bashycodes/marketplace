@@ -159,3 +159,33 @@ test('post with retry:false (creates): a 5xx or network error throws on the firs
   const { api: a4, f: f4 } = make([{ method: 'POST', path: '/task/x', reply: [{ status: 503, text: '' }, ok({ id: 'x' })] }]);
   assert.deepEqual(await a4.post('/task/x', {}), { id: 'x' }); assert.equal(f4.calls.length, 2);
 });
+
+test('Retry-After on 429/503 (seconds or HTTP-date) sets the wait, capped at 60 s; absent/garbage → backoff', async () => {
+  /** @param {number} status @param {string} ra */
+  const mk = (status, ra) => {
+    const clock = fakeClock(); let n = 0;
+    const log = createLogger({ stderr: /** @type {any} */ ({ write() { return true; } }) });
+    /** @type {any} */ const f = async () => (n++ === 0 ? new Response('', { status, headers: { 'retry-after': ra } }) : new Response('[]', { status: 200 }));
+    const api = createApi({ fetch: f, token: TOKEN, log, sleep: clock.sleep, random: () => 0.5, now: () => Date.parse('2026-10-01T12:00:00Z') });
+    return { api, clock, calls: () => n };
+  };
+  let m = mk(429, '7'); assert.deepEqual(await m.api.get('/project'), []); assert.deepEqual(m.clock.sleeps, [7000]);
+  m = mk(503, '600'); await m.api.get('/project'); assert.deepEqual(m.clock.sleeps, [60000]);
+  m = mk(503, 'Thu, 01 Oct 2026 12:00:30 GMT'); await m.api.get('/project'); assert.deepEqual(m.clock.sleeps, [30000]);
+  m = mk(429, 'Thu, 01 Oct 2026 11:00:00 GMT'); await m.api.get('/project'); assert.deepEqual(m.clock.sleeps, [0]);   // date in the past → retry at once
+  m = mk(429, 'soon'); await m.api.get('/project'); assert.deepEqual(m.clock.sleeps, [500]);
+  m = mk(502, '7'); await m.api.get('/project'); assert.deepEqual(m.clock.sleeps, [500]);   // only 429/503 honour it
+  // a create (retry:false) still retries a 429 and honours Retry-After
+  m = mk(429, '3'); await m.api.post('/task', {}, { retry: false }); assert.deepEqual(m.clock.sleeps, [3000]); assert.equal(m.calls(), 2);
+});
+
+test('a small declared content-length is read normally (the cap only refuses larger ones)', async () => {
+  const log = createLogger({ stderr: /** @type {any} */ ({ write() { return true; } }) });
+  const { MAX_BODY_BYTES } = await import('../../plugins/grill-over-ticktick/lib/api.mjs');
+  /** @type {any} */ const small = async () => new Response('[1]', { status: 200, headers: { 'content-length': '3' } });
+  assert.deepEqual(await createApi({ fetch: small, token: TOKEN, log }).get('/project'), [1]);
+  /** @type {any} */ const atCap = async () => new Response('[]', { status: 200, headers: { 'content-length': String(MAX_BODY_BYTES) } });
+  assert.deepEqual(await createApi({ fetch: atCap, token: TOKEN, log }).get('/project'), []);
+  /** @type {any} */ const justOver = async () => new Response('[]', { status: 200, headers: { 'content-length': String(MAX_BODY_BYTES + 1) } });
+  await assert.rejects(createApi({ fetch: justOver, token: TOKEN, log }).get('/project'), (/** @type {any} */ e) => e.exitCode === 1 && /response too large/.test(e.message));
+});

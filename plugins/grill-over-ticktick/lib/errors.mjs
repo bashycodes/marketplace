@@ -47,6 +47,18 @@ export function toExit(err, secrets = []) {
   return { exitCode: EXIT.ERROR, json: { error: 'internal', message: redact(message, secrets) } };
 }
 
+/**
+ * Boundary check for a 200 body that must be a list: null/empty → [], an array passes, anything
+ * else is exit 1 (not a TypeError deep in the caller).
+ * @param {unknown} v @param {string} what
+ * @returns {any[]}
+ */
+export function asArray(v, what) {
+  if (v === null || v === undefined) return [];
+  if (!Array.isArray(v)) throw apiError('unexpected response shape', { what });
+  return v;
+}
+
 /** Shape every TickTick id must have before it reaches a URL path, the pushlog path or a pushlog line. */
 export const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 

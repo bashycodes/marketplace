@@ -2,7 +2,7 @@ import { parseArgs } from 'node:util';
 import { homedir } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { createLogger } from './log.mjs';
-import { toExit, usage } from './errors.mjs';
+import { toExit, usage, asArray } from './errors.mjs';
 import { readToken, writeToken, promptHidden } from './token.mjs';
 import { createApi } from './api.mjs';
 import { defaultStateDir } from './pushlog.mjs';
@@ -107,8 +107,7 @@ export async function main(argv, io = {}) {
       case 'auth': {
         if (positionals[0] === 'status') {
           const api = await withToken();
-          /** @type {any[]} */
-          const projects = (await api.get('/project')) ?? [];
+          const projects = asArray(await api.get('/project'), 'projects');
           result = { ok: true, projects: projects.length };
         } else {
           const token = (await promptHidden(stdin, stderr, 'TickTick API token: ')).trim();

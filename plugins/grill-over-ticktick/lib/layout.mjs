@@ -1,5 +1,5 @@
 import { hostTitle, writeBlock, isValidEffort } from './state.mjs';
-import { serverId, usage } from './errors.mjs';
+import { serverId, usage, asArray } from './errors.mjs';
 
 export const FOLDER = 'Claude';
 export const COLUMN = '📍';
@@ -13,7 +13,7 @@ const enc = (id) => encodeURIComponent(id);
 
 /** @param {Api} api */
 async function findGroup(api) {
-  /** @type {any[]} */ const groups = (await api.get('/project/group')) ?? [];
+  const groups = asArray(await api.get('/project/group'), 'project groups');
   const g = groups.find((g) => g.name === FOLDER) ?? null;
   if (g) serverId(g.id, 'group');
   return g;
@@ -21,7 +21,7 @@ async function findGroup(api) {
 
 /** @param {Api} api @param {string} groupId @param {string} effort */
 async function findList(api, groupId, effort) {
-  /** @type {any[]} */ const projects = (await api.get('/project')) ?? [];
+  const projects = asArray(await api.get('/project'), 'projects');
   const p = projects.find((p) => p.groupId === groupId && p.name === effort && !p.closed) ?? null;
   if (p) serverId(p.id, 'list');
   return p;
@@ -30,14 +30,14 @@ async function findList(api, groupId, effort) {
 /** @param {any} data @param {string} effort */
 function hostIn(data, effort) {
   const title = hostTitle(effort);
-  const h = (data?.tasks ?? []).find((/** @type {any} */ t) => t.kind === 'NOTE' && t.title === title) ?? null;
+  const h = asArray(data?.tasks, 'list tasks').find((/** @type {any} */ t) => t.kind === 'NOTE' && t.title === title) ?? null;
   if (h) serverId(h.id, 'host');
   return h;
 }
 
 /** @param {any} data */
 function columnIn(data) {
-  const c = (data?.columns ?? []).find((/** @type {any} */ c) => c.name === COLUMN) ?? null;
+  const c = asArray(data?.columns, 'list columns').find((/** @type {any} */ c) => c.name === COLUMN) ?? null;
   if (c) serverId(c.id, 'column');
   return c;
 }
@@ -73,7 +73,7 @@ export async function ensureLayout(api, effort) {
   let host = hostIn(data, effort);
   // Never convert a list the user already had: an existing list without our host note is only
   // adopted when it is empty.
-  if (listExisted && !host && (data?.tasks ?? []).length > 0) throw usage(`list "${effort}" exists in folder Claude but is not a tt-grill list; rename it or pick another effort`);
+  if (listExisted && !host && asArray(data?.tasks, 'list tasks').length > 0) throw usage(`list "${effort}" exists in folder Claude but is not a tt-grill list; rename it or pick another effort`);
   let column = columnIn(data);
   if (!column) { column = await api.post(`/project/${enc(list.id)}/column`, { name: COLUMN, sortOrder: 0 }, { retry: false }); serverId(column?.id, 'column'); created = true; }
   if (!host) {
@@ -95,7 +95,7 @@ export async function ensureLayout(api, effort) {
  * @returns {Promise<boolean>} true if created
  */
 export async function ensureTag(api) {
-  /** @type {any[]} */ const tags = (await api.get('/tag')) ?? [];
+  const tags = asArray(await api.get('/tag'), 'tags');
   if (tags.some((t) => t.name === TAG)) return false;
   await api.post('/tag', { name: TAG, label: TAG }, { retry: false });
   return true;
@@ -110,7 +110,7 @@ export async function ensureTag(api) {
  */
 export async function listEfforts(api, log) {
   const group = await findGroup(api); if (!group) return [];
-  /** @type {any[]} */ const projects = (await api.get('/project')) ?? [];
+  const projects = asArray(await api.get('/project'), 'projects');
   /** @type {{ effort: string, listId: string, hostId: string }[]} */ const out = [];
   for (const p of projects.filter((p) => p.groupId === group.id && !p.closed)) {
     if (!isValidEffort(p.name)) { log?.debug(`skipping list with an invalid effort name: ${JSON.stringify(p.name)}`); continue; }

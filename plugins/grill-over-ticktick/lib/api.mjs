@@ -7,6 +7,8 @@ export const MAX_ATTEMPTS = 5;
 export const BASE_MS = 500;
 export const CAP_MS = 8000;
 export const TIMEOUT_MS = 20000;
+/** Longest `Retry-After` honoured on a 429/503. */
+export const RETRY_AFTER_CAP_MS = 60000;
 /** Largest response body accepted (the biggest legitimate body is ~480 KB). */
 export const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
@@ -48,6 +50,20 @@ export function backoffMs(attempt, random) {
 }
 
 /**
+ * `Retry-After` as a delay in ms (integer seconds or an HTTP-date), capped; null when absent or unparsable.
+ * @param {string | null | undefined} value @param {number} nowMs
+ * @returns {number | null}
+ */
+export function retryAfterMs(value, nowMs) {
+  const v = (value ?? '').trim();
+  if (!v) return null;
+  let ms;
+  if (/^\d+$/.test(v)) ms = Number(v) * 1000;
+  else { const t = Date.parse(v); if (!Number.isFinite(t)) return null; ms = t - nowMs; }
+  return Math.min(RETRY_AFTER_CAP_MS, Math.max(0, ms));
+}
+
+/**
  * @typedef {object} Api
  * @property {(path: string) => Promise<any>} get
  * @property {(path: string, body?: unknown, opts?: { retry?: boolean }) => Promise<any>} post
@@ -55,10 +71,10 @@ export function backoffMs(attempt, random) {
  */
 
 /**
- * @param {{ fetch: typeof fetch, token: string, log: import('./log.mjs').Logger, sleep?: (ms: number) => Promise<void>, random?: () => number, baseUrl?: string, timeoutMs?: number }} opts
+ * @param {{ fetch: typeof fetch, token: string, log: import('./log.mjs').Logger, sleep?: (ms: number) => Promise<void>, random?: () => number, now?: () => number, baseUrl?: string, timeoutMs?: number }} opts
  * @returns {Api}
  */
-export function createApi({ fetch, token, log, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), random = Math.random, baseUrl = BASE_URL, timeoutMs = TIMEOUT_MS }) {
+export function createApi({ fetch, token, log, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), random = Math.random, now = Date.now, baseUrl = BASE_URL, timeoutMs = TIMEOUT_MS }) {
   const secrets = [token];
   const clean = (/** @type {string} */ s) => redact(s, secrets);
 
@@ -106,7 +122,10 @@ export function createApi({ fetch, token, log, sleep = (ms) => new Promise((r) =
       if (res.status === 404) throw notFound(`not found: ${where}`, { errorCode });
       if (RETRY_STATUSES.has(res.status) && (retry || res.status === 429)) {
         log.debug(`retryable ${res.status} on ${where} (attempt ${attempt})`);
-        if (attempt < MAX_ATTEMPTS) { await sleep(backoffMs(attempt, random)); continue; }
+        if (attempt < MAX_ATTEMPTS) {
+          const ra = res.status === 429 || res.status === 503 ? retryAfterMs(res.headers?.get?.('retry-after'), now()) : null;
+          await sleep(ra ?? backoffMs(attempt, random)); continue;
+        }
         throw apiError(`gave up after ${MAX_ATTEMPTS} attempts: ${res.status} ${where}`, { status: res.status, errorCode });
       }
       throw apiError(`http ${res.status} ${where}${serverMsg ? ': ' + serverMsg : ''}`, { status: res.status, errorCode, errorId });

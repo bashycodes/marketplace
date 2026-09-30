@@ -614,3 +614,17 @@ test('finish refuses while the filter is truncated (exit 2), archiving nothing',
   await assert.rejects(finish({ ...ctx, owner }), (/** @type {any} */ e) => e.exitCode === 2 && /truncated/.test(e.message));
   assert.notEqual(tt.db.projects.find((x) => x.id === listId).closed, true);
 });
+
+test('a filter or /data body of the wrong shape → exit 1 "unexpected response shape"', async (t) => {
+  let mode = '';
+  const { ctx } = hooked(t, (_tt, path, init) => {
+    if (mode === 'filter' && path === '/task/filter') return new Response('{"tasks":[]}', { status: 200 });
+    if (mode === 'data' && /\/data$/.test(path) && (init?.method ?? 'GET') === 'GET') return new Response('{"tasks":{}}', { status: 200 });
+  });
+  const { owner } = await takeover(ctx);
+  await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  for (const m of ['filter', 'data']) {
+    mode = m;
+    await assert.rejects(pull(ctx), (/** @type {any} */ e) => e.exitCode === 1 && e.code === 'api' && /unexpected response shape/.test(e.message), m);
+  }
+});

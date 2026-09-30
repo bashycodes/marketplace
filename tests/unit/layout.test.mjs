@@ -142,3 +142,19 @@ test('every takeover create (group, list, column, host, tag) is sent once: a 503
     assert.equal(hits, 1, `${what} create sent ${hits} times`);
   }
 });
+
+test('a 200 body of the wrong shape → exit 1 "unexpected response shape" (not a TypeError)', async () => {
+  /** @type {[string, (m: string, p: string) => boolean, (api: any) => Promise<unknown>][]} */
+  const cases = [
+    ['group list', (m, p) => m === 'GET' && p === '/project/group', (api) => ensureLayout(api, 'e')],
+    ['project list', (m, p) => m === 'GET' && p === '/project', (api) => listEfforts(api)],
+    ['tag list', (m, p) => m === 'GET' && p === '/tag', (api) => ensureTag(api)],
+  ];
+  for (const [what, match, run] of cases) {
+    const tt = fakeTickTick(); tt.seedEffort('e');
+    const f = /** @type {typeof fetch} */ (async (url, init) => match((init?.method ?? 'GET').toUpperCase(), new URL(String(url)).pathname.replace(/^\/open\/v1/, '')) ? new Response('{"x":1}', { status: 200 }) : tt.fetch(url, init));
+    const log = createLogger({ stderr: /** @type {any} */ ({ write() { return true; } }) });
+    const api = createApi({ fetch: f, token: 'T', log, sleep: async () => {} });
+    await assert.rejects(run(api), (/** @type {any} */ e) => e.exitCode === 1 && e.code === 'api' && /unexpected response shape/.test(e.message), what);
+  }
+});
