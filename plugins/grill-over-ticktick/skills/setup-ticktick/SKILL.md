@@ -3,6 +3,7 @@ name: setup-ticktick
 description: One-time setup for grill-over-ticktick — store the TickTick API token in the user's own terminal, verify it, and push a test question to the phone.
 disable-model-invocation: true
 argument-hint: ""
+allowed-tools: Bash(tt-grill *)
 ---
 
 # Set up TickTick for grilling

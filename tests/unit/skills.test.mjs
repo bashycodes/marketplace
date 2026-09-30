@@ -28,6 +28,8 @@ for (const s of skills) {
     for (const m of body.matchAll(/tt-grill (\w+)/g)) if (!['—', 'is', 'and', 'in', 'on'].includes(m[1])) assert.ok(COMMANDS.includes(m[1]) || m[1] === 'auth', `unknown command tt-grill ${m[1]} in ${s}`);
     assert.ok(!/cat .*token|echo .*token/.test(body), 'skill must never read the token');
     assert.ok(/ingest\.md/.test(body), 'every skill points at the shared ingest procedure');
+    assert.equal(fm['allowed-tools'], 'Bash(tt-grill *)');
+    if (/tt-grill wait/.test(body) && s === 'grill-with-ticktick') assert.match(body, /timeout: 7200000/);
   });
 }
 
