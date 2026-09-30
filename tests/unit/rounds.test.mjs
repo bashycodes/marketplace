@@ -628,3 +628,21 @@ test('a filter or /data body of the wrong shape → exit 1 "unexpected response 
     await assert.rejects(pull(ctx), (/** @type {any} */ e) => e.exitCode === 1 && e.code === 'api' && /unexpected response shape/.test(e.message), m);
   }
 });
+
+test('takeover creates the grill tag when it is missing (once)', async (t) => {
+  const { tt, ctx } = setup(t);
+  tt.seedEffort('e'); tt.db.tags.length = 0;
+  await takeover(ctx);
+  assert.deepEqual(tt.db.tags.map((x) => x.name), ['grill']);
+  assert.equal(tt.calls.filter((c) => c.method === 'POST' && c.path === '/tag').length, 1);
+  await takeover(ctx);
+  assert.equal(tt.calls.filter((c) => c.method === 'POST' && c.path === '/tag').length, 1);
+});
+
+test('a host completed outside tt-grill reads as not found (the real /data is undone-only) → exit 6', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner, hostId } = await takeover(ctx);
+  await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  tt.setStatus(hostId, 2);
+  await assert.rejects(pull(ctx), (/** @type {any} */ e) => e.exitCode === 6);
+});

@@ -2,6 +2,11 @@ import { hostTitle, writeBlock } from '../../plugins/grill-over-ticktick/lib/sta
 
 /** @typedef {{ method: string, path: string, body: any, headers: Record<string,string> }} Call */
 
+/**
+ * In-memory TickTick. Matches the recorded fixtures where the code reads: `GET /project/{id}/data`
+ * lists undone (status 0) tasks only, tags are lowercased on create, and the create response
+ * omits `parentId` (the filter and GETs carry it). See fake-ticktick.test.mjs (fidelity test).
+ */
 export function fakeTickTick() {
   let n = 0; const id = (/** @type {string} */ p) => `${p}${++n}`;
   let e = 0; const etag = () => `e${++e}`;
@@ -23,12 +28,12 @@ export function fakeTickTick() {
     if (method === 'POST' && path === '/project/group') { const g = { id: id('g'), name: body.name, sortOrder: 0, showAll: true }; db.groups.push(g); return json(200, g); }
     if (method === 'GET' && path === '/project') return json(200, db.projects.map((p) => ({ ...p })));
     if (method === 'POST' && path === '/project') { const p = { id: id('p'), name: body.name, sortOrder: 0, viewMode: body.viewMode ?? 'list', kind: body.kind ?? 'TASK', ...(body.groupId ? { groupId: body.groupId } : {}) }; db.projects.push(p); return json(200, p); }
-    if ((m = /^\/project\/([^/]+)\/data$/.exec(path)) && method === 'GET') { const p = db.projects.find((x) => x.id === m?.[1]); if (!p) return notFound('project'); return json(200, { project: p, tasks: db.tasks.filter((t) => t.projectId === p.id && !t.deleted).map(publicTask), columns: db.columns.filter((c) => c.projectId === p.id) }); }
+    if ((m = /^\/project\/([^/]+)\/data$/.exec(path)) && method === 'GET') { const p = db.projects.find((x) => x.id === m?.[1]); if (!p) return notFound('project'); return json(200, { project: p, tasks: db.tasks.filter((t) => t.projectId === p.id && !t.deleted && t.status === 0).map(publicTask), columns: db.columns.filter((c) => c.projectId === p.id) }); }
     if ((m = /^\/project\/([^/]+)\/column$/.exec(path))) { const pid = m[1]; if (method === 'GET') return json(200, db.columns.filter((c) => c.projectId === pid)); const c = { id: id('c'), projectId: pid, name: body.name, sortOrder: body.sortOrder ?? 0 }; db.columns.push(c); return json(200, c); }
     if ((m = /^\/project\/([^/]+)\/task\/([^/]+)$/.exec(path)) && method === 'GET') { const t = find(m[2]); if (!t || t.projectId !== m[1]) return notFound('task'); return json(200, publicTask(t)); }
     if ((m = /^\/project\/([^/]+)$/.exec(path))) { const p = db.projects.find((x) => x.id === m?.[1]); if (!p) return notFound('project'); if (method === 'DELETE') { db.projects.splice(db.projects.indexOf(p), 1); return json(200, undefined); } Object.assign(p, body); return json(200, p); }
     if (method === 'POST' && path === '/task/filter') { const tags = /** @type {string[]} */ (body.tag ?? []); const out = db.tasks.filter((t) => !t.deleted && (body.projectIds ?? []).includes(t.projectId) && tags.every((g) => (t.tags ?? []).includes(g))); return json(200, out.slice(0, 200).map(publicTask)); }
-    if (method === 'POST' && path === '/task') { const t = touch({ id: id('t'), projectId: body.projectId, title: body.title, kind: body.kind ?? 'TEXT', status: 0, priority: 0, tags: body.tags ?? [], ...(body.parentId ? { parentId: body.parentId } : {}), ...(body.columnId ? { columnId: body.columnId } : {}), ...(body.content !== undefined ? { content: body.content } : {}), ...(body.desc !== undefined ? { desc: body.desc } : {}), ...(body.items ? { items: body.items.map((/** @type {any} */ it) => ({ id: id('i'), status: 0, title: it.title, sortOrder: 0 })) } : {}), createdTime: new Date().toISOString() }); db.tasks.push(t); const parent = body.parentId && find(body.parentId); if (parent) parent.childIds = [...(parent.childIds ?? []), t.id]; return json(200, publicTask(t)); }
+    if (method === 'POST' && path === '/task') { const t = touch({ id: id('t'), projectId: body.projectId, title: body.title, kind: body.kind ?? 'TEXT', status: 0, priority: 0, tags: (body.tags ?? []).map((/** @type {string} */ g) => g.toLowerCase()), ...(body.parentId ? { parentId: body.parentId } : {}), ...(body.columnId ? { columnId: body.columnId } : {}), ...(body.content !== undefined ? { content: body.content } : {}), ...(body.desc !== undefined ? { desc: body.desc } : {}), ...(body.items ? { items: body.items.map((/** @type {any} */ it) => ({ id: id('i'), status: 0, title: it.title, sortOrder: 0 })) } : {}), createdTime: new Date().toISOString() }); db.tasks.push(t); const parent = body.parentId && find(body.parentId); if (parent) parent.childIds = [...(parent.childIds ?? []), t.id]; const { parentId: _p, ...created } = publicTask(t); return json(200, created); }
     if ((m = /^\/task\/([^/]+)$/.exec(path)) && method === 'POST') { const t = find(m[1]); if (!t) return notFound('task'); for (const k of ['status', 'title', 'content', 'desc', 'columnId']) if (body[k] !== undefined) t[k] = body[k]; if (body.items) t.items = body.items.map((/** @type {any} */ it) => ({ id: it.id ?? id('i'), status: it.status ?? 0, title: it.title, sortOrder: 0 })); touch(t); return json(200, publicTask(t)); }
     if (method === 'GET' && path === '/tag') return json(200, db.tags);
     if (method === 'POST' && path === '/tag') { const g = { name: body.name, label: body.label, sortOrder: 0, type: 1 }; db.tags.push(g); return json(200, g); }
