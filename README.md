@@ -23,6 +23,6 @@ Each plugin lives under `plugins/<name>/`. Development files (tests, `package.js
 
 Development: `npm test` (offline unit tests), `npm run typecheck`, and `npm run validate` — the local manifest check (`claude plugin validate` for the plugin and the marketplace). `validate` needs the `claude` CLI, so it is not run in CI; run it before pushing manifest changes.
 
-Limitations: Not installable in claude.ai / Cowork (the plugin ships a `bin/` directory).
+Limitations: grill-over-ticktick is not installable in claude.ai / Cowork (the plugin ships a `bin/` directory), and its `tt-grill` CLI runs on Linux, macOS and WSL (not native Windows).
 
 Cloud: Claude Code cloud/web sessions need `api.ticktick.com` on the network allowlist, and they do not install a repo's `enabledPlugins`.

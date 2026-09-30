@@ -1,7 +1,16 @@
 {
   "name": "grill-over-ticktick",
+  "version": "1.0.0",
   "description": "Relay /grill-me question rounds to TickTick and answer them from your phone; Claude ingests the answers and keeps grilling.",
-  "author": { "name": "bashycodes", "url": "https://github.com/bashycodes" },
+  "author": {
+    "name": "bashycodes",
+    "url": "https://github.com/bashycodes"
+  },
+  "repository": "https://github.com/bashycodes/marketplace",
   "license": "MIT",
-  "keywords": ["grilling", "ticktick", "productivity"]
+  "keywords": [
+    "grilling",
+    "ticktick",
+    "productivity"
+  ]
 }
