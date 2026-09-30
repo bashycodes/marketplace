@@ -184,9 +184,10 @@ test('wait: answered → exit 0 reason all; takeover mid-wait → 3; --max → 4
   let r = await run(['takeover', '--effort', 'e']); const owner = r.json.owner;
   r = await run(['push', '--effort', 'e', '--owner', owner], JSON.stringify(ROUND)); const taskId = r.json.questions[0].taskId;
   tt.tick(taskId, '⭐ a');
+  const before = clock.sleeps.length;
   r = await run(['wait', '--effort', 'e', '--owner', owner, '--every', '1s', '--settle', '5s', '--grace', '1s', '--max', '1m']);
   assert.equal(r.code, 0); assert.equal(r.json.reason, 'all'); assert.equal(r.json.questions[0].signal, 'tick');
-  assert.deepEqual(clock.sleeps.slice(-2), [1000, 1000]);
+  assert.deepEqual(clock.sleeps.slice(before), [1000]); // already answered at the first poll → straight to grace
   r = await run(['close', '--effort', 'e', '--owner', owner], JSON.stringify({ answered: ['r1.1'] })); assert.equal(r.code, 0);
   const ROUND2 = { ...ROUND, round: 2, host: { ...ROUND.host, open: ['r2.1 q2 — ⭐ a'] }, questions: [{ ...ROUND.questions[0], key: 'r2.1', title: 'q2?' }] };
   r = await run(['push', '--effort', 'e', '--owner', owner], JSON.stringify(ROUND2)); assert.equal(r.code, 0);

@@ -124,3 +124,55 @@ test('result still carries the full pull output (older rounds included)', async 
   const r = await run([open, done, done]).p;
   assert.equal(r.reason, 'all'); assert.deepEqual(r.questions.map((/** @type {any} */ q) => q.key), ['r1.1', 'r2.1']);
 });
+
+test('transient exit-1 pull errors are retried (logged); 5 in a row abort with the original error', async () => {
+  const { apiError, authError } = await import('../../plugins/grill-over-ticktick/lib/errors.mjs');
+  /** @type {string[]} */ const lines = [];
+  const wlog = createLogger({ stderr: /** @type {any} */ ({ write(/** @type {string} */ s) { lines.push(s); return true; } }) });
+  const open = R([['r1.1', 'a', 'none']]); const done = R([['r1.1', 'a2', 'tick']]);
+  // 4 failures in a row, then success: survives
+  let n = 0;
+  const clock = fakeClock();
+  const seq = [open, 'x', 'x', 'x', 'x', done, done];
+  const r = await wait({ pull: async () => { const v = seq[Math.min(n++, seq.length - 1)]; if (v === 'x') throw apiError('gave up after 5 attempts: 503 GET /x'); return /** @type {any} */ (v); }, owner: 'o_a', every: 3 * M, settle: 10 * M, grace: 90 * S, max: 24 * 60 * M, now: clock.now, sleep: clock.sleep, log: wlog });
+  assert.equal(r.reason, 'all');
+  assert.equal(lines.filter((l) => l.includes('503')).length, 4);
+  // 5 in a row: abort with the original error
+  const e1 = apiError('boom-5');
+  let k = 0; const c2 = fakeClock();
+  await assert.rejects(wait({ pull: async () => { if (k++ === 0) return open; throw e1; }, owner: 'o_a', every: 3 * M, settle: 10 * M, grace: 90 * S, max: 24 * 60 * M, now: c2.now, sleep: c2.sleep, log }), (/** @type {any} */ e) => e === e1);
+  assert.equal(k, 6);
+  // a failure streak is reset by a success
+  let j = 0; const c3 = fakeClock(); const pat = [open, 'x', 'x', 'x', 'x', open, 'x', 'x', 'x', 'x', done, done];
+  assert.equal((await wait({ pull: async () => { const v = pat[Math.min(j++, pat.length - 1)]; if (v === 'x') throw new Error('fetch failed'); return /** @type {any} */ (v); }, owner: 'o_a', every: 3 * M, settle: 10 * M, grace: 90 * S, max: 24 * 60 * M, now: c3.now, sleep: c3.sleep, log })).reason, 'all');
+  // exit 5 propagates at once
+  let a = 0; const c4 = fakeClock();
+  await assert.rejects(wait({ pull: async () => { if (a++ === 0) return open; throw authError(); }, owner: 'o_a', every: 3 * M, settle: 10 * M, grace: 90 * S, max: 24 * 60 * M, now: c4.now, sleep: c4.sleep, log }), (/** @type {any} */ e) => e.exitCode === 5);
+  assert.equal(a, 2);
+});
+
+test('parseDuration rejects values beyond the 32-bit timer range', () => {
+  assert.equal(parseDuration('596h'), 596 * 60 * M);
+  assert.throws(() => parseDuration('597h'), (/** @type {any} */ e) => e.exitCode === 2);
+  assert.throws(() => parseDuration('9'.repeat(400) + 'h'), (/** @type {any} */ e) => e.exitCode === 2);
+  assert.throws(() => parseDuration('2147483648ms'), (/** @type {any} */ e) => e.exitCode === 2);
+  assert.equal(parseDuration('2147483647ms'), 2147483647);
+});
+
+test('--max is checked before each sleep and sleeps are clamped to the remaining budget', async () => {
+  const { p, clock } = run([R([['r1.1', 'a', 'none']])], { max: 10 * M });
+  await assert.rejects(p, (/** @type {any} */ e) => e.exitCode === 4);
+  assert.deepEqual(clock.sleeps, [3 * M, 3 * M, 3 * M, 1 * M]);
+  const { p: p2, clock: c2 } = run([R([['r1.1', 'a', 'none']])], { max: 1 * M, every: 60 * M });
+  await assert.rejects(p2, (/** @type {any} */ e) => e.exitCode === 4 && /60 s|1 min/.test(e.message));
+  assert.deepEqual(c2.sleeps, [1 * M]);
+  const { p: p3 } = run([R([['r1.1', 'a', 'none']])], { max: 20 * S, every: 5 * S });
+  await assert.rejects(p3, (/** @type {any} */ e) => e.exitCode === 4 && e.message.includes('20 s'));
+});
+
+test('first pull already all-final → grace path at once (no every sleep first)', async () => {
+  const done = R([['r1.1', 'a2', 'tick']]);
+  const { p, clock } = run([done, done]);
+  assert.equal((await p).reason, 'all');
+  assert.deepEqual(clock.sleeps, [90 * S]);
+});
