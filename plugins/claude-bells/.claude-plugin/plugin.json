@@ -1,6 +1,6 @@
 {
   "name": "claude-bells",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Know when a Claude Code session in tmux needs you: 😴/🔔 badge on its tmux tab plus a terminal bell (taskbar flash on Windows Terminal), silent while you're watching.",
   "author": {
     "name": "bashycodes",
