@@ -1,6 +1,6 @@
 ---
 name: setup
-description: One-time per-machine wiring for claude-bells. Adds the 😴/🔔 badge to your tmux tabs, makes your terminal react to the bell, and retires any hand-wired hooks.
+description: One-time per-machine wiring for claude-bells. Adds the 😴/🔔 badge and a prefix-a clear key to your tmux tabs, makes your terminal react to the bell, and retires any hand-wired hooks.
 disable-model-invocation: true
 ---
 
@@ -33,6 +33,14 @@ set -g focus-events on
 
 `focus-events on` lets the plugin tell whether you're looking at the pane.
 
+**Clear key.** Add this line so prefix `a` clears the badge on the current window by hand:
+
+```tmux
+bind a set -wu @claude_waiting
+```
+
+Skip it if the config already binds a key to `set -wu @claude_waiting`. If `tmux list-keys -T prefix a` prints a binding, prefix `a` is taken: show the user what it does and ask which free key to use instead.
+
 **Tabs.** Insert `#{E:@claude_badge}` directly after `#W` in both `window-status-format` and `window-status-current-format`.
 - If the config sets a format, edit that line in place and keep the user's styling.
 - If it doesn't, read the live value with `tmux show -gwv <option>` and add a `setw -g` line with the badge inserted.
@@ -45,7 +53,8 @@ Reload with `tmux source-file <config>`.
 **Done when:**
 - the reload succeeds;
 - `tmux show -gv @claude_badge` prints the mapping;
-- `tmux show -gwv` shows `#{E:@claude_badge}` in both formats.
+- `tmux show -gwv` shows `#{E:@claude_badge}` in both formats;
+- `tmux list-keys -T prefix` shows a key bound to `set-option -uw @claude_waiting`.
 
 ## 3. Terminal bell
 

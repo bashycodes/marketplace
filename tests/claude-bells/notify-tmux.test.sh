@@ -39,6 +39,12 @@ run clear; run alert stop
 for _ in 1 2 3 4 5 6 7 8 9 10; do [ "$(t display -p -t "$PANE" '#{window_bell_flag}')" = 1 ] && break; sleep 0.1; done
 check "alert rings the pane bell" 1 "$(t display -p -t "$PANE" '#{window_bell_flag}')"
 
+# The clear key setup installs. Untargeted, like a key binding, so it acts on the current window.
+CLEAR_KEY=$(sed -n 's/^bind a //p' "$SKILL")
+t select-window -t "$PANE"
+[ -n "$CLEAR_KEY" ] && t $CLEAR_KEY  # unquoted on purpose: split into tmux arguments
+check "clear key removes the badge" "" "$(state)"
+
 out=$(echo '{}' | env -u TMUX bash "$SCRIPT" alert stop; echo "exit=$?")
 check "outside tmux: silent no-op" "exit=0" "$out"
 
