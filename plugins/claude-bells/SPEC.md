@@ -49,9 +49,9 @@ When an alert fires and I'm **not** looking at the pane:
 |---|---|
 | Grey tab highlight | I switch to that tmux window (tmux built-in) |
 | Taskbar flash | Windows Terminal comes to the foreground (Windows built-in) |
-| Badge (😴 or 🔔, whatever the reason) | I submit a prompt in that session, or Claude runs any tool |
+| Badge (😴 or 🔔, whatever the reason) | I submit a prompt in that session, Claude runs any tool, or I press prefix `a` in that window |
 
-Just looking at a window does **not** clear the badge. That's intentional: the badge means "idle and waiting for you", not "unseen".
+Just looking at a window does **not** clear the badge. That's intentional: the badge means "idle and waiting for you", not "unseen". When I've seen it and want it gone without replying, prefix `a` dismisses it by hand.
 
 Claude waking itself up (a background task finishing, a monitor firing, a scheduled wakeup) and running tools also clears the badge. That's intended too: while Claude is working there's nothing for me to do. When it stops again, the Stop hook puts 😴 back, unless I'm looking at the pane.
 
@@ -92,6 +92,7 @@ Claude waking itself up (a background task finishing, a monitor firing, a schedu
 33. As a tmux user, I want one setup command, `/claude-bells:setup`, to wire my tmux config and my terminal's bell setting while keeping my existing status-bar formats, and to tell me which setting to change when it can't configure my terminal itself, so that the parts no plugin can install are still one step away.
 34. As a Claude Code user who doesn't use tmux, I want the plugin to stay inert, so that installing it costs me nothing.
 35. As a user of the earlier hand-wired version, I want setup to remove my old hook entries, so that moving to the plugin doesn't make every alert fire twice.
+36. As a tmux user, I want a prefix key that clears the badge on the current window, so that I can dismiss a session I've noticed but won't answer yet without sending it a prompt.
 
 ## Implementation Decisions
 
@@ -113,10 +114,11 @@ Claude waking itself up (a background task finishing, a monitor firing, a schedu
   | PostToolUse | (all) | `clear` |
 
   Each hook has a 5-second timeout.
-- **tmux status format, in the user's tmux config.** One shared user option, `@claude_badge`, maps the reason to an emoji with one explicit conditional per reason: `stop` → 😴, `ask` → 🔔, `perm` → 🔔; any other value, or unset, → nothing. Both `window-status-format` and `window-status-current-format` expand `@claude_badge` after the window name, so the mapping lives in one place. The user's existing theme is otherwise unchanged. Once setup writes it, the mapping lives only in the user's tmux config; the hook script never reads it, so users can change the emoji without touching the plugin. The tmux settings this relies on are `focus-events on`, `monitor-bell on`, `bell-action any`, plus tmux's defaults `visual-bell off` and `window-status-bell-style reverse`.
+- **tmux status format, in the user's tmux config.** One shared user option, `@claude_badge`, maps the reason to an emoji with one explicit conditional per reason: `stop` → 😴, `ask` → 🔔, `perm` → 🔔; any other value, or unset, → nothing. Both `window-status-format` and `window-status-current-format` expand `@claude_badge` after the window name, so the mapping lives in one place. The user's existing theme is otherwise unchanged. The same config binds prefix `a` to `set -wu @claude_waiting`, which clears the badge on the current window by hand; it's plain tmux and doesn't call the hook script. Once setup writes it, the mapping lives only in the user's tmux config; the hook script never reads it, so users can change the emoji without touching the plugin. The tmux settings this relies on are `focus-events on`, `monitor-bell on`, `bell-action any`, plus tmux's defaults `visual-bell off` and `window-status-bell-style reverse`.
 - **Windows Terminal bell style.** The profile defaults use `bellStyle: "taskbar"`, so a BEL flashes the taskbar icon when Windows Terminal isn't the foreground window, in every profile that doesn't set its own bell style.
 - **Setup skill (user-invoked).** Everything outside Claude Code is wired by the plugin's setup skill, which runs only when the user invokes it. It:
   - finds the user's tmux config and adds the `@claude_badge` mapping plus the badge reference in both window-status formats, preserving the user's existing formats;
+  - binds prefix `a` to clear the badge, or asks for another key if `a` is taken;
   - turns `focus-events` on, checks that `monitor-bell` is on and `bell-action` is `any`, then reloads tmux;
   - on WSL with Windows Terminal, sets the profile-defaults `bellStyle` to `taskbar`; for any other terminal, tells the user which setting makes the terminal react to a bell;
   - removes pre-plugin, hand-wired hook entries that call a notify-tmux script, so alerts don't fire twice;
@@ -131,6 +133,7 @@ Claude waking itself up (a background task finishing, a monitor firing, a schedu
 | any | Permission prompt or elicitation, and pane not being looked at | `perm` | 🔔 |
 | any | User submits a prompt | unset | nothing |
 | any | Any tool finishes (PostToolUse) | unset | nothing |
+| any | User presses prefix `a` in that window | unset | nothing |
 
 Why any tool run clears every badge: the badge means "Claude is idle and waiting for me", so it has no business showing while Claude works. That includes Claude waking itself up: the badge disappears while it works, and the Stop hook re-marks the window with 😴 when it finishes, unless I'm looking at the pane. The reason is still recorded, but only to pick the emoji.
 
@@ -163,6 +166,7 @@ History: in live testing, a background task woke Claude after a turn ended, Clau
   - Check: `alert stop|ask|perm` sets the matching value and raises `window_bell_flag`; `alert` with no reason defaults to `stop`; `clear` clears every reason, `stop` included. Then kill the window.
   - Also check: running outside tmux (with `TMUX` and `TMUX_PANE` unset) exits 0 and does nothing.
   - Give the isolated server the badge mapping and format references that setup writes, then render both status formats with `#{E:window-status-format}` and `#{E:window-status-current-format}` against windows marked `stop`, `ask`, `perm`, an unknown value, and unset. Expect 😴, 🔔, 🔔, nothing, nothing.
+  - Run the clear-key command that setup writes on a marked window, and expect the mark gone.
 - **Seam 2, plugin install and setup, tested live in a session:**
   - Validate the plugin's hook config and list each event → command mapping. After setup, confirm no hand-wired notify-tmux hook entries remain in the user's Claude settings.
   - Run setup and confirm its closing scratch-window check passes.
