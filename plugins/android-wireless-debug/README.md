@@ -8,13 +8,17 @@ Triggers when you hand over device details (an `IP:port`, a pairing code, "wirel
 
 `scripts/adb_connect.sh` runs a cascade, cheapest route first:
 
-1. A TCP port the phone already listens on (default `54321`, `ADB_TCP_PORT` to override) at the default gateway — which *is* the phone when you're on its hotspot. Works with the phone's Wi-Fi off.
-2. Bootstrap that port over USB (`adb tcpip`) once; the cable can then come out until the phone reboots. Covers a greyed-out Wireless debugging toggle and WSL setups where only USB reaches the device.
-3. Android 11+ pairing with a 6-digit code — last, since it's the only route needing the user to read numbers off the screen.
+1. The persistent port (`adb tcpip 54321`, `ADB_TCP_PORT` to override) on the phone's **Tailscale** IP — the default; works from any network while Tailscale is up on both ends. Also tries `ADB_DEVICE_IP` and the default gateway (the phone, on its hotspot).
+2. A USB cable → `adb tcpip 54321`.
+3. adb already open elsewhere: an attached transport or an mDNS-advertised Wireless debugging port.
+4. Android 11+ pairing with a 6-digit code — last, since it's the only route needing the user to read numbers off the screen.
+
+Whenever steps 2–4 connect, the script opens the persistent port and reconnects on it, so the next session succeeds at step 1. The port lasts until the phone reboots.
 
 ## Requirements
 
 - `adb` (Android platform-tools) on `PATH`
+- Tailscale on both machine and phone (optional, for reaching the phone off-LAN)
 - Developer options + Wireless debugging (or USB debugging) enabled on the device
 
 ## Contents

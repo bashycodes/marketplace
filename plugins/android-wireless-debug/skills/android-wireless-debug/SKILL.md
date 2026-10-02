@@ -1,7 +1,7 @@
 ---
 name: android-wireless-debug
 description: >-
-  Drive a real Android phone over ADB wireless debugging to see, test and fix an app — connect, screenshot, tap through the UI, read logcat/dumpsys, install APKs, and iterate on a fix until it is verified on the device. Use this whenever the user offers device connection details (an IP:port, a "pair with device" code, "wireless debugging is on"), or asks you to try/test/debug/install something on their phone, tablet, Pixel, Galaxy or "my device" — and equally when they report an app bug you cannot reproduce by reading code, such as "it looks wrong on my phone", "the button is cut off", "it's in light mode but my app is dark", "it crashes on my device". Prefer this over reasoning from source alone: layout, theme, inset and packaging bugs are frequently invisible in code and obvious in one screenshot. Covers connecting even when Wireless debugging is unavailable — a phone running a hotspot with Wi-Fi off, a greyed-out toggle, or a Windows/WSL machine where only the USB cable can reach the device — by opening an adb TCP port over the cable once.
+  Drive a real Android phone over ADB (Tailscale or wireless debugging) to see, test and fix an app — connect, screenshot, tap through the UI, read logcat/dumpsys, install APKs, and iterate on a fix until it is verified on the device. Use this whenever the user offers device connection details (an IP:port, a "pair with device" code, "wireless debugging is on"), or asks you to try/test/debug/install something on their phone, tablet, Pixel, Galaxy or "my device" — and equally when they report an app bug you cannot reproduce by reading code, such as "it looks wrong on my phone", "the button is cut off", "it's in light mode but my app is dark", "it crashes on my device". Prefer this over reasoning from source alone: layout, theme, inset and packaging bugs are frequently invisible in code and obvious in one screenshot. Covers connecting even when Wireless debugging is unavailable — a phone running a hotspot with Wi-Fi off, a greyed-out toggle, or a Windows/WSL machine where only the USB cable can reach the device — by opening a persistent adb TCP port once and reaching it over Tailscale from anywhere afterwards.
 ---
 
 # Debugging on a real Android device over wireless ADB
@@ -23,19 +23,28 @@ Run the cascade. It tries the cheapest route first and prints what it did:
 scripts/adb_connect.sh
 ```
 
-1. **A TCP port the phone is already listening on** — default `54321`, override
-   with `ADB_TCP_PORT`. The address defaults to this machine's default gateway,
-   which *is* the phone when you are on its hotspot. One TCP probe, no user
-   involvement, works on a phone with Wi-Fi off entirely.
-2. **Bootstrap that port over USB** — `adb tcpip 54321` sent down the cable,
-   after which the cable comes out and stays out until the phone reboots. Needs
-   the phone unlocked once to authorise the computer.
-3. **Android 11+ pairing with a 6-digit code** — last, because it is the only
-   route that needs the user to go and read numbers off a screen. The script
-   prints exactly what to ask for.
+1. **The persistent port over Tailscale** — the default. A phone that once ran
+   `adb tcpip 54321` keeps adbd listening on `54321` on *every* interface until
+   it reboots, Tailscale's included, so the phone's tailnet IP reaches it from
+   anywhere: home, mobile data, another country. The script finds online
+   Android peers with `tailscale status`, then also tries `ADB_DEVICE_IP` and
+   the default gateway (the phone, when you are on its hotspot). One TCP probe,
+   no user involvement. Needs Tailscale connected on both ends.
+2. **A USB cable** — `adb tcpip 54321` sent down the cable opens the
+   persistent port. Needs the phone unlocked once to authorise the computer.
+3. **adb already open elsewhere** — a transport already in `adb devices`, or a
+   Wireless debugging port advertised over mDNS.
+4. **The 6-digit pairing code** — last, because it is the only route that needs
+   the user to go and read numbers off a screen. The script prints exactly
+   what to ask for.
 
-Route 2 is what makes this work on a phone that *cannot* use the pairing flow
-at all. Details, WSL specifics and the security tradeoff of leaving a port
+**Every route other than 1 ends by opening the persistent port**: the script
+runs `adb tcpip 54321` on the transport that got in and reconnects on
+`<tailscale-ip>:54321` (the phone's 100.x address is tried first), so the next
+session connects at step 1 with nothing asked of the user. `tcpip` restarts
+adbd and drops the transport that ran it; the script reconnects on its own.
+
+Port lifetime, WSL specifics and the security tradeoff of leaving the port
 open: **`references/wsl-and-usb.md`**.
 
 ### When the user names a route
@@ -45,6 +54,7 @@ Read the intent off the invocation rather than running the cascade:
 | They say | Run |
 |---|---|
 | `/android-wireless-debug` | `scripts/adb_connect.sh` — the cascade, no questions |
+| `... over Tailscale`, a `100.x` address | `ADB_DEVICE_IP=100.x.y.z scripts/adb_connect.sh` |
 | `... over USB`, `... with the cable` | `scripts/adb_connect.sh --usb` |
 | `... 10.0.0.5:43657 888999` | `scripts/adb_connect.sh 10.0.0.5:43657 888999` — pairs, then finds the connect port itself |
 | `... 10.0.0.5:43657` | `scripts/adb_connect.sh 10.0.0.5:43657` |
@@ -69,7 +79,7 @@ scripts/adb_connect.sh <IP:PORT> <IP:PAIR_PORT> <code>   # freshly opened dialog
 The code is single-use and dies with the dialog, so a second attempt always
 needs a new one.
 
-### What route 3 needs from the user
+### What step 4 needs from the user
 
 From **Settings ▸ Developer options ▸ Wireless debugging**, phone and machine
 on the same network:
@@ -82,9 +92,11 @@ on the same network:
 Pairing persists, so later sessions usually need only the connect address. If
 `adb connect` fails on a device you have paired before, ask for a fresh code.
 
-**The toggle is greyed out when the phone is not a Wi-Fi client** — hotspot on
-with Wi-Fi off is the usual cause, and it is a precondition of the OS, not
-something to troubleshoot. Take route 2 instead of trying to talk them into it.
+**The toggle is greyed out when the phone is not a Wi-Fi client** — on mobile
+data, or hotspot on with Wi-Fi off. It is a precondition of the OS, not
+something to troubleshoot. Any Wi-Fi network enables it, internet or not: a
+car's Wi-Fi works. Otherwise take the cable (step 2). Once either gets in, the
+script opens the persistent port and Wi-Fi stops mattering.
 
 ### Use `adb -t <transport_id>` for everything afterwards
 
@@ -100,7 +112,7 @@ $D shell getprop ro.build.version.release
 
 If a later command fails with `no device with transport id 'N'`, the transport
 dropped — the phone's port is almost certainly still open. Rerun the script
-(route 1 picks it back up in seconds) and use the new id.
+(step 1 picks it back up in seconds) and use the new id.
 
 ## Looking at the screen
 
