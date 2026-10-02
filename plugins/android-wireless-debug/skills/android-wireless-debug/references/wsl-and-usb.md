@@ -146,7 +146,9 @@ Worth stating plainly when you leave one open on someone's personal phone:
 - It is **plaintext**. The pairing flow wraps adb in TLS; `adb tcpip` does not.
 - `adbd` binds `INADDR_ANY` — `[::]:54321`, every interface. There is no
   bind-address property; the only knob is the port number. So the port follows
-  the phone onto every network it later joins.
+  the phone onto every network it later joins — which is also what makes it
+  reachable over Tailscale. Restricting it to the tailnet interface needs root
+  (iptables); on a stock phone, it cannot be done.
 - RSA auth still stands in the way, so this is not the ADB.Miner scenario
   (that hit devices shipped with `ro.adb.secure=0`). An attacker on the network
   gets `unauthorized` unless someone taps the dialog for them.

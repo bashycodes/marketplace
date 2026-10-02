@@ -2,31 +2,49 @@
 # Connect to an Android device for debugging, cheapest route first.
 #
 # Usage:
-#   adb_connect.sh                                # auto: known port -> USB bootstrap -> pairing
+#   adb_connect.sh                                # auto: see the cascade below
 #   adb_connect.sh --usb                          # force the USB bootstrap
 #   adb_connect.sh <ip[:port]>                    # connect straight to a known address
 #   adb_connect.sh <ip:pairPort> <code>           # pair with a 6-digit code, then connect
 #   adb_connect.sh <ip:port> <ip:pairPort> <code> # pair on one port, connect on another
 #
+# Cascade (auto):
+#   1. the persistent port (adb tcpip 54321) on the phone's Tailscale IP,
+#      ADB_DEVICE_IP, or the default gateway (= the phone, on its hotspot)
+#   2. a USB cable -> adb tcpip 54321
+#   3. adb already open elsewhere: an attached transport or an mDNS-advertised
+#      Wireless debugging port
+#   4. nothing -> print the 6-digit pairing instructions
+# Whenever a route other than 1 connects, the script runs `adb tcpip 54321`
+# and reconnects on that port, so the next session succeeds at step 1.
+#
 # Env:
-#   ADB_TCP_PORT   port adbd listens on in legacy TCP mode (default 54321)
-#   ADB_DEVICE_IP  device address. Defaults to the default gateway, which IS the
-#                  phone when this machine is on the phone's hotspot.
+#   ADB_TCP_PORT   the persistent legacy-TCP port (default 54321)
+#   ADB_DEVICE_IP  device address to try first in step 1
 #   ADB_WIN        path to a Windows platform-tools adb.exe (WSL only)
 set -uo pipefail
 
 PORT="${ADB_TCP_PORT:-54321}"
 say() { printf '%s\n' "$*" >&2; }
 
-device_ip() {
-  if [ -n "${ADB_DEVICE_IP:-}" ]; then echo "$ADB_DEVICE_IP"; return; fi
-  ip route 2>/dev/null | awk '/^default/{print $3; exit}'
+# Online Android peers on this machine's tailnet. The persistent port listens
+# on every interface, Tailscale's included, so this reaches the phone from any
+# network as long as Tailscale is connected on both ends.
+tailscale_android() {
+  command -v tailscale >/dev/null 2>&1 || return 0
+  tailscale status 2>/dev/null | awk '$4=="android" && $5!="offline" {print $1}'
+}
+
+gateway_ip() { ip route 2>/dev/null | awk '/^default/{print $3; exit}'; }
+
+# Step-1 addresses, best first: explicit, Tailscale, hotspot gateway.
+tcp_candidates() {
+  [ -n "${ADB_DEVICE_IP:-}" ] && echo "$ADB_DEVICE_IP"
+  tailscale_android
+  gateway_ip
 }
 
 port_open() { timeout 2 bash -c "echo > /dev/tcp/$1/$2" 2>/dev/null; }
-
-# An already-attached wireless device, if any: "ip:port".
-attached_tcp() { adb devices | awk 'NF==2 && $1 ~ /:[0-9]+$/ && $2=="device" {print $1; exit}'; }
 
 # A USB device: "serial state".
 attached_usb() { adb devices | awk 'NF==2 && $1 !~ /:[0-9]+$/ {print $1, $2; exit}'; }
@@ -66,7 +84,7 @@ report() {
   echo "disconnect:  adb disconnect $addr      # leaves the port open on the phone"
 }
 
-# --- route 1: a TCP port the phone is already listening on -------------------
+# --- step 1: the persistent port ---------------------------------------------
 try_tcp() {
   local addr="$1"
   case "$addr" in *:*) ;; *) addr="$addr:$PORT" ;; esac
@@ -78,7 +96,7 @@ try_tcp() {
   return 1
 }
 
-# --- route 2: bootstrap the TCP port over USB --------------------------------
+# --- step 2: a USB cable ------------------------------------------------------
 win_adb() {
   local c
   # Never /mnt/c/Windows/adb.exe — that stray is usually adb 1.0.32 and its
@@ -119,27 +137,66 @@ usb_bootstrap() {
     return 1
   fi
 
-  say "==> $serial over USB; switching adbd to TCP port $PORT"
-  adb -s "$serial" tcpip "$PORT" || return 1
+  say "==> $serial over USB"
+  CONNECTED="$serial"
+  open_port "$serial" || return 1
+  case "$CONNECTED" in *:"$PORT") say "==> up on $CONNECTED. Unplug the cable whenever you like." ;; esac
+  return 0
+}
 
-  # adbd restarts, so poll rather than sleep. The phone's own addresses cover
-  # the case where it is not this machine's gateway.
+# --- persistent port: `adb tcpip` on whatever transport got us in ------------
+# Runs after every route except step 1, so the next session needs no user. The
+# phone's own addresses are collected first because adbd restarts on tcpip and
+# drops the current transport; its Tailscale (100.x) address is tried first so
+# the saved address works off-LAN too.
+phone_ips() {
+  adb -s "$1" shell ip -4 -o addr show scope global 2>/dev/null \
+    | awk '{split($4,a,"/"); print a[1]}' | tr -d '\r' \
+    | awk '/^100\./{print; next} {rest=rest $0 "\n"} END{printf "%s", rest}'
+}
+
+open_port() {
+  local addr="$1" ips cand tries
+  case "$addr" in *:"$PORT") return 0 ;; esac
+  ips="$(phone_ips "$addr") ${ADB_DEVICE_IP:-} $(gateway_ip)"
+  say "==> opening the persistent port: adb -s $addr tcpip $PORT"
+  if ! adb -s "$addr" tcpip "$PORT" >/dev/null 2>&1; then
+    say "    tcpip failed; staying on $addr (no persistent port this time)"
+    return 0
+  fi
+  case "$addr" in *:*) adb disconnect "$addr" >/dev/null 2>&1 ;; esac
+  # adbd restarts, so poll rather than sleep once.
   for tries in 1 2 3 4 5 6 7 8; do
-    for cand in $(device_ip) \
-                $(adb -s "$serial" shell ip -4 -o addr show scope global 2>/dev/null \
-                  | awk '{split($4,a,"/"); print a[1]}' | tr -d '\r'); do
+    for cand in $ips; do
       if port_open "$cand" "$PORT" && connect_to "$cand:$PORT"; then
         CONNECTED="$cand:$PORT"
-        say "==> up on $CONNECTED. Unplug the cable whenever you like."
+        say "==> persistent port up: $CONNECTED (lasts until the phone reboots)"
         return 0
       fi
     done
+    sleep 1
   done
-  say "adbd restarted on $PORT but nothing answered. Is this machine on the phone's network?"
+  say "adbd restarted on $PORT but none of [$ips] answered from here."
+  # Wireless debugging and USB survive the restart; fall back to the original.
+  case "$addr" in *:*) connect_to "$addr" ;; esac
+  adb devices | grep -q "^${addr}[[:space:]]\+device$" && { CONNECTED="$addr"; return 0; }
   return 1
 }
 
-# --- route 3: Android 11+ pairing --------------------------------------------
+# --- step 3: adb already open on some other address --------------------------
+other_listener() {
+  local addr
+  for addr in $PRIOR_TCP \
+              $(adb devices | awk 'NF==2 && $1 ~ /:[0-9]+$|_adb-tls-connect/ && $2=="device" {print $1}') \
+              $(adb mdns services 2>/dev/null | awk '$2 ~ /_adb-tls-connect/ {print $3}'); do
+    say "==> trying $addr"
+    adb devices | grep -q "^${addr}[[:space:]]\+device$" && { CONNECTED="$addr"; return 0; }
+    connect_to "$addr" && { CONNECTED="$addr"; return 0; }
+  done
+  return 1
+}
+
+# --- step 4: Android 11+ pairing ----------------------------------------------
 pair_and_connect() {
   local pair_addr="$1" code="$2" connect_addr="${3:-}" mdns
   say "==> pairing with $pair_addr"
@@ -188,35 +245,45 @@ Nothing to connect to. Ask the user for Android 11+ wireless debugging:
 Then:  adb_connect.sh <IP:PAIR_PORT> <code>
        adb_connect.sh <IP:PORT> <IP:PAIR_PORT> <code>   # if the code auto-connect fails
 
-If the phone cannot be a Wi-Fi client (hotspot on, Wi-Fi off), use the cable
-instead:  adb_connect.sh --usb
+The toggle only needs *a* Wi-Fi network, not internet: a car's or any other
+Wi-Fi is enough. If the phone cannot join any Wi-Fi, use the cable instead:
+adb_connect.sh --usb. Either way the script then opens the persistent port.
 MSG
 }
 
 CONNECTED=""
 case "${1:-}" in
   --usb|-u) usb_bootstrap && report "$CONNECTED"; exit $? ;;
-  -h|--help) sed -n '2,20p' "$0" >&2; exit 0 ;;
+  -h|--help) sed -n '2,27p' "$0" >&2; exit 0 ;;
 esac
 
 if [ $# -ge 2 ] && [[ "$2" =~ ^[0-9]{6}$ ]]; then
-  pair_and_connect "$1" "$2" && report "$CONNECTED"; exit $?
+  pair_and_connect "$1" "$2" && open_port "$CONNECTED" && report "$CONNECTED"; exit $?
 fi
 if [ $# -ge 3 ]; then
-  pair_and_connect "$2" "$3" "$1" && report "$CONNECTED"; exit $?
+  pair_and_connect "$2" "$3" "$1" && open_port "$CONNECTED" && report "$CONNECTED"; exit $?
 fi
 if [ $# -ge 1 ]; then
-  try_tcp "$1" && { report "$CONNECTED"; exit 0; }
+  try_tcp "$1" && open_port "$CONNECTED" && { report "$CONNECTED"; exit 0; }
   say "could not reach $1"; exit 1
 fi
 
 # auto
-existing=$(attached_tcp)
+# step 1: the persistent port — already attached, or on a candidate address
+existing=$(adb devices | awk -v p=":$PORT" 'NF==2 && $2=="device" && substr($1, length($1)-length(p)+1)==p {print $1; exit}')
 if [ -n "$existing" ]; then
   say "==> already attached: $existing"
   report "$existing"; exit 0
 fi
-try_tcp "$(device_ip)"  && { report "$CONNECTED"; exit 0; }
-usb_bootstrap           && { report "$CONNECTED"; exit 0; }
+for cand in $(tcp_candidates); do
+  try_tcp "$cand" && { report "$CONNECTED"; exit 0; }
+done
+# Remember attached transports: the WSL path of step 2 restarts the adb server.
+PRIOR_TCP=$(adb devices | awk 'NF==2 && $1 ~ /:[0-9]+$/ && $2=="device" {print $1}')
+# step 2: USB cable (opens the persistent port itself)
+usb_bootstrap && { report "$CONNECTED"; exit 0; }
+# step 3: adb open on another address -> then open the persistent port
+other_listener && open_port "$CONNECTED" && { report "$CONNECTED"; exit 0; }
+# step 4
 pairing_instructions
 exit 1

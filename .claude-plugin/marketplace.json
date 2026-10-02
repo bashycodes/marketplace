@@ -33,14 +33,15 @@
     {
       "name": "android-wireless-debug",
       "source": "./plugins/android-wireless-debug",
-      "description": "Drive a real Android phone over ADB to see, test and fix an app — screenshots, UI taps, logcat/dumpsys, APK installs; connects even via USB-opened TCP from WSL.",
-      "version": "1.0.0",
+      "description": "Drive a real Android phone over ADB to see, test and fix an app — screenshots, UI taps, logcat/dumpsys, APK installs; connects over Tailscale from anywhere, or via USB-opened TCP from WSL.",
+      "version": "1.1.0",
       "category": "development",
       "keywords": [
         "android",
         "adb",
         "debugging",
-        "mobile"
+        "mobile",
+        "tailscale"
       ]
     }
   ]
