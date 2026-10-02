@@ -132,13 +132,15 @@ async function loadHost(api, layout, effort) {
 }
 
 /**
- * One filter call → footer key → taskId for this host's children (first task wins per key).
+ * One filter call → footer key → taskId for this list's questions (first task wins per key).
+ * A question is any `grill`-tagged task in the list whose desc footer carries a key, whatever
+ * its parentId: questions are top-level tasks now, older efforts have them as host subtasks.
  * @param {Api} api @param {Layout} layout @returns {Promise<Map<string, string>>}
  */
 async function childKeys(api, layout) {
   const tasks = asArray(await api.post('/task/filter', { projectIds: [layout.listId], tag: [TAG] }), 'task filter');
   /** @type {Map<string, string>} */ const out = new Map();
-  for (const t of tasks) { if (t.parentId !== layout.hostId) continue; const k = parseDesc(t.desc).key; if (k && !out.has(k)) out.set(k, serverId(t.id, 'task')); }
+  for (const t of tasks) { if (t.id === layout.hostId) continue; const k = parseDesc(t.desc).key; if (k && !out.has(k)) out.set(k, serverId(t.id, 'task')); }
   return out;
 }
 
@@ -179,7 +181,7 @@ async function fetchQuestions(ctx, layout) {
   const tasks = asArray(await ctx.api.post('/task/filter', { projectIds: [layout.listId], tag: [TAG] }), 'task filter');
   /** @type {Map<string, PulledQuestion>} */ const byKey = new Map();
   for (const t of tasks) {
-    if (t.parentId !== layout.hostId) continue;
+    if (t.id === layout.hostId) continue;   // keyed tasks of any parentId (see childKeys)
     serverId(t.id, 'task');
     const parsed = parseDesc(t.desc);
     // The pushlog's own reverse lookup wins: it is what *this* CLI created this task for. The
@@ -213,7 +215,7 @@ export async function takeover(ctx) {
   await ensureTag(ctx.api);
   const { prose, state, trailing } = await loadHost(ctx.api, layout, ctx.effort);
   // No readable state block (wiped/edited on the phone): rebuild `round` from the highest
-  // r<N> among the host's children so push's round guard still has a floor.
+  // r<N> among the list's questions so push's round guard still has a floor.
   const round = state ? state.round : Math.max(0, ...[...(await childKeys(ctx.api, layout)).keys()].map((k) => Number(k.slice(1).split('.')[0])));
   const owner = newOwner(ctx.random);
   const next = { v: /** @type {1} */ (1), owner, gen: (state?.gen ?? 0) + 1, round };
@@ -242,7 +244,7 @@ export async function push(args) {
   // Guards and adoption lookups run before any write.
   const pushlog = createPushlog({ dir: args.pushlogDir, listId: layout.listId });
   const entries = await pushlog.load();
-  // Footer key → taskId for the host's children, needed whenever some key has no taskId in
+  // Footer key → taskId for the list's questions, needed whenever some key has no taskId in
   // the pushlog (crash between create and log line, or the pushlog file is gone entirely).
   /** @type {Map<string, string>} */ const existing = round.questions.some((q) => !entries.get(q.key)?.taskId) ? await childKeys(args.api, layout) : new Map();
   if (round.round > hostRound) {
@@ -262,7 +264,9 @@ export async function push(args) {
   // Titles get an `[i/N] ` prefix so a name-sorted list shows the round in order. Each desc links
   // to the NEXT question (the last one back to the host), so questions are created last-first:
   // the next task's id must exist before its predecessor's desc is written. Existing/adopted
-  // questions keep their desc as-is (never rewritten).
+  // questions keep their desc as-is (never rewritten). Questions are top-level tasks in the 📍
+  // column, not host subtasks: the TickTick Android app renders a link as a task chip only
+  // when the target is top-level.
   const n = round.questions.length;
   /** @type {string[]} */ const ids = new Array(n);
   /** @type {boolean[]} */ const made = new Array(n).fill(false);
@@ -277,7 +281,8 @@ export async function push(args) {
       : { label: prefixTitle(round.questions[i + 1].title, i + 2, n), url: taskUrl(layout.listId, ids[i + 1]) };
     await pushlog.creating(q.key);
     const t = await args.api.post('/task', {
-      title: prefixTitle(q.title, i + 1, n), projectId: layout.listId, parentId: layout.hostId, kind: 'CHECKLIST',
+      title: prefixTitle(q.title, i + 1, n), projectId: layout.listId, kind: 'CHECKLIST',
+      ...(layout.columnId ? { columnId: layout.columnId } : {}),
       desc: buildDesc({ ...q, next: LINK_FIELD === 'desc' ? next : null }),
       ...(LINK_FIELD === 'content' ? { content: nextLine(next) } : {}),
       items: buildItems(q.options, q.rec.label), tags: [TAG],
