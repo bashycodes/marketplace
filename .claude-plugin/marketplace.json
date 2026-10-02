@@ -10,7 +10,7 @@
       "name": "grill-over-ticktick",
       "source": "./plugins/grill-over-ticktick",
       "description": "Relay /grill-me rounds to TickTick and answer from your phone.",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "category": "productivity",
       "keywords": [
         "ticktick",
