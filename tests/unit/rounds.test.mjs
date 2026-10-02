@@ -94,7 +94,7 @@ test('takeover on a fresh account creates the layout and writes owner/gen=1; aga
   assert.deepEqual(readBlock(tt.find(a.hostId).content), { prose: '📍 e extra', state: { v: 1, owner: b.owner, gen: 2, round: 3 }, trailing: '' });
 });
 
-test('push: writes host body first, creates questions one at a time with desc/items/tag/parent, logs pushlog', async (t) => {
+test('push: writes host body first, creates top-level questions one at a time with desc/items/tag/column, logs pushlog', async (t) => {
   const { tt, ctx } = setup(t);
   const { owner, hostId, listId } = await takeover(ctx);
   const start = tt.calls.length;
@@ -109,7 +109,11 @@ test('push: writes host body first, creates questions one at a time with desc/it
   assert.deepEqual(state, { v: 1, owner, gen: 1, round: 2 });
   const q1 = tt.find(r.questions[0].taskId);
   const q2 = tt.find(r.questions[1].taskId);
-  assert.deepEqual([q1.kind, q1.parentId, q1.projectId, q1.tags, q1.title], ['CHECKLIST', hostId, listId, ['grill'], '[1/2] Where does the token live?']);
+  // top-level tasks (no parentId) in the 📍 column: the Android app only renders links to top-level tasks as chips
+  const columnId = tt.db.columns.find((c) => c.projectId === listId && c.name === '📍').id;
+  assert.deepEqual([q1.kind, q1.parentId, q1.projectId, q1.columnId, q1.tags, q1.title], ['CHECKLIST', undefined, listId, columnId, ['grill'], '[1/2] Where does the token live?']);
+  assert.equal(q2.parentId, undefined); assert.equal(q2.columnId, columnId);
+  assert.ok(tt.calls.slice(start).filter((c) => c.method === 'POST' && c.path === '/task').every((c) => !('parentId' in c.body) && c.body.columnId === columnId));
   assert.equal(q2.title, '[2/2] How is it read?');
   assert.deepEqual(q1.items.map((/** @type {any} */ i) => i.title), ['⭐ file', 'env', OTHER_TITLE]);
   assert.equal(LINK_FIELD, 'desc');
@@ -210,12 +214,12 @@ test('pull: classification of every phone action, sorted by key, host state, tru
   assert.ok(r.host.prose.startsWith('📍 e'));
 });
 
-test('pull ignores tasks that belong to another host or have no key', async (t) => {
+test('pull ignores tasks that have no key or no grill tag', async (t) => {
   const { tt, ctx } = setup(t);
   const { owner, listId } = await takeover(ctx);
   await push({ ...ctx, owner, round: structuredClone(ROUND) });
   tt.db.tasks.push({ id: 'tx', projectId: listId, title: 'stray tagged', kind: 'TEXT', status: 0, tags: ['grill'], etag: 'z' });
-  tt.db.tasks.push({ id: 'ty', projectId: listId, parentId: 'someone-else', title: 'other host', kind: 'CHECKLIST', status: 0, tags: ['grill'], etag: 'z', desc: buildDesc({ key: 'r9.9', context: 'c', rec: { label: 'a', why: 'w' } }) });
+  tt.db.tasks.push({ id: 'ty', projectId: listId, title: 'untagged', kind: 'CHECKLIST', status: 0, tags: [], etag: 'z', desc: buildDesc({ key: 'r9.9', context: 'c', rec: { label: 'a', why: 'w' } }) });
   const r = await pull(ctx);
   assert.deepEqual(r.questions.map((q) => q.key), ['r2.1', 'r2.2']);
 });
@@ -369,7 +373,7 @@ test('push refuses a round behind the host (exit 2) and a new round reusing an e
   // keys of another round are refused up front (validateRound)
   await assert.rejects(push({ ...ctx, owner, round: { ...structuredClone(ROUND), round: 3 } }), (/** @type {any} */ e) => e.exitCode === 2 && /key must start with "r3\."/.test(e.message));
   assert.equal(posts(), before);
-  // a new round whose key already exists in TickTick (a stray r3.1 child, pushlog lost) → refused via the footer
+  // a new round whose key already exists in TickTick (a stray r3.1 question, pushlog lost) → refused via the footer
   const { rmSync } = await import('node:fs');
   rmSync(join(ctx.pushlogDir, `${listId}.log`));
   const hostId = tt.db.tasks.find((x) => x.kind === 'NOTE').id;
@@ -381,7 +385,7 @@ test('push refuses a round behind the host (exit 2) and a new round reusing an e
   assert.deepEqual(r.questions.map((q) => q.created), [false, false]);
 });
 
-test('takeover on a host whose state block was wiped rebuilds round from the children footer keys', async (t) => {
+test('takeover on a host whose state block was wiped rebuilds round from the question footer keys', async (t) => {
   const { tt, ctx } = setup(t);
   const { owner, hostId } = await takeover(ctx);
   await push({ ...ctx, owner, round: structuredClone(ROUND) });
@@ -645,4 +649,46 @@ test('a host completed outside tt-grill reads as not found (the real /data is un
   await push({ ...ctx, owner, round: structuredClone(ROUND) });
   tt.setStatus(hostId, 2);
   await assert.rejects(pull(ctx), (/** @type {any} */ e) => e.exitCode === 6);
+});
+
+/** A keyed question task as an older (subtask) or current (top-level) tt-grill made it. */
+const seedQ = (/** @type {any} */ tt, /** @type {string} */ listId, /** @type {string} */ id, /** @type {string} */ key, /** @type {string | undefined} */ parentId) =>
+  tt.db.tasks.push({ id, projectId: listId, ...(parentId ? { parentId } : {}), title: key, kind: 'CHECKLIST', status: 0, tags: ['grill'], etag: 'z', items: [{ id: `${id}i`, title: '⭐ a', status: 0 }, { id: `${id}o`, title: OTHER_TITLE, status: 0 }], desc: buildDesc({ key, context: 'c', rec: { label: 'a', why: 'w' } }) });
+
+test('legacy effort: a mixed list (one subtask question + one top-level question) is pulled, closed and finished alike', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner, listId, hostId } = await takeover(ctx);
+  seedQ(tt, listId, 'legacy', 'r1.1', hostId);
+  seedQ(tt, listId, 'toplvl', 'r1.2', undefined);
+  tt.tick('legacy', '⭐ a'); tt.tick('toplvl', '⭐ a');
+  const r = await pull(ctx);
+  assert.deepEqual(r.questions.map((q) => [q.key, q.taskId, q.signal]), [['r1.1', 'legacy', 'tick'], ['r1.2', 'toplvl', 'tick']]);
+  const c = await close({ ...ctx, owner, input: { answered: ['r1.1', 'r1.2'] } });
+  assert.deepEqual([c.closed, c.skipped], [['r1.1', 'r1.2'], []]);
+  assert.deepEqual([tt.find('legacy').status, tt.find('toplvl').status], [2, 2]);
+  const f = await finish({ ...ctx, owner });
+  assert.deepEqual(f.decisions.map((d) => [d.key, d.ticked]), [['r1.1', ['a']], ['r1.2', ['a']]]);
+});
+
+test('push adopts a top-level question by its footer when the pushlog has no taskId for it', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner, listId, hostId } = await takeover(ctx);
+  // a first push wrote the host (round 2), created r2.2, then crashed before the log line
+  tt.find(hostId).content = writeBlock('📍 e', { v: 1, owner, gen: 1, round: 2 });
+  seedQ(tt, listId, 'pre', 'r2.2', undefined);
+  const n = tt.db.tasks.length;
+  const r = await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  assert.deepEqual(r.questions.map((q) => [q.key, q.created]), [['r2.1', true], ['r2.2', false]]);
+  assert.equal(r.questions[1].taskId, 'pre');
+  assert.equal(tt.db.tasks.length, n + 1);
+});
+
+test('takeover of a tt-grill list made of host + top-level questions: not refused as foreign; a wiped state block rebuilds round from their footers', async (t) => {
+  const { tt, ctx } = setup(t);
+  const { owner, hostId } = await takeover(ctx);
+  await push({ ...ctx, owner, round: structuredClone(ROUND) });
+  tt.find(hostId).content = 'wiped';
+  const b = await takeover({ ...ctx, random: () => 0.9 });
+  assert.equal(b.hostId, hostId); assert.equal(b.created, false);
+  assert.deepEqual(readBlock(tt.find(hostId).content).state, { v: 1, owner: b.owner, gen: 1, round: 2 });
 });

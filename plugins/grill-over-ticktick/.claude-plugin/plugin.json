@@ -1,6 +1,6 @@
 {
   "name": "grill-over-ticktick",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Relay /grill-me question rounds to TickTick and answer them from your phone; Claude ingests the answers and keeps grilling.",
   "author": {
     "name": "bashycodes",

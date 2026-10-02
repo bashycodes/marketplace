@@ -6,10 +6,11 @@
 An effort name must match `^[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,58}[A-Za-z0-9._-])?$`: 1–60 characters, only letters, digits, space, `.`, `_` and `-`, starting with a letter or digit and with no leading or trailing space. No quotes, `$`, backticks or newlines — the name is pasted into shell commands. `tt-grill` refuses anything else with exit 2 (every `--effort` and the round JSON `effort`), and `efforts` never lists a list whose name breaks the rule.
 
 ## Layout
-- Folder **`Claude`** → one kanban **list per effort** (list title = effort name) → tasks → subtasks.
+- Folder **`Claude`** → one kanban **list per effort** (list title = effort name) → host note + question tasks, all top-level.
 - Each list has one column **`📍`**.
 - **Host** = a `kind: NOTE` task titled `📍 <effort>` in the `📍` column. Notes have no checkbox, so a stray tap cannot complete them. It must stay undone: `GET /project/{id}/data` returns undone tasks only, so a host completed by other means (e.g. the web app) reads as not found (exit 6).
-- **Question** = a `CHECKLIST` subtask of the host (`parentId` = host), tagged **`grill`**. The user's smart list "🔥 Grill inbox" filters on that tag.
+- **Question** = a top-level `CHECKLIST` task in the effort's list (no `parentId`), in the `📍` column, tagged **`grill`**. Top-level matters: the TickTick Android app renders a `Next →` link as a task chip only when its target is a top-level task. The user's smart list "🔥 Grill inbox" filters on that tag.
+- `tt-grill` treats any `grill`-tagged task in the list whose desc footer carries a key as a question, whatever its `parentId`. Efforts created before v1.0.1 have their questions as subtasks of the host (`parentId` = host); they are read, adopted, closed and finished the same way.
 - No dates, reminders or comments are ever used.
 - Only `takeover` creates the folder/list/host/tag when they are missing. `push`, `pull`, `close`, `wait` and `finish` all resolve an existing layout and fail with exit 6 (not found) if the effort was never taken over or its host note was deleted. The host is always read via `GET /project/{listId}/data` (never the single-task GET, which still returns deleted tasks); `pull` and every `wait` poll use it. Always `takeover` before the first `push` for an effort. `takeover` never converts a list the user already had: if a list with the effort's name exists in `Claude` without a `📍 <effort>` host and is not empty, it exits 2 (`list "<E>" exists in folder Claude but is not a tt-grill list; rename it or pick another effort`); an empty one is adopted.
 
