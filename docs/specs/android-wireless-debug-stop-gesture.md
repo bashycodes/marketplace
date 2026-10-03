@@ -29,17 +29,18 @@ Tested on a Galaxy S25 (Android 16):
 9. As a phone owner, I want gestures made before the session started to be ignored, so that a volume sequence from five minutes earlier doesn't stop a new session.
 10. As a phone owner, I want a stop left over from a previous session to be cleared when a new session connects, so that a new session doesn't start stopped.
 11. As a phone owner, I want Claude to stop if it can no longer watch the buttons, so that a dropped watcher never leaves Claude in control unwatched.
-12. As a phone owner, I want Claude to tell me the stop gesture whenever it starts controlling my phone, so that I know how to stop it before I need to.
-13. As a phone owner, I want the watcher to stop when the session ends, so that nothing keeps listening to my buttons afterwards.
-14. As a phone owner, I want leftover watchers from earlier sessions killed when a new session connects, so that stale processes don't pile up on my phone.
-15. As a phone owner, I want only the button devices watched, not the touchscreen, so that what I type and touch is never read or recorded.
-16. As a Claude agent, I want my adb commands refused with a clear reason while a stop is in place, so that I stop and report instead of retrying.
-17. As a Claude agent, I want reconnecting and checking the watcher to stay allowed while stopped, so that I can recover when the user says continue.
-18. As a Claude agent, I want guidance to keep on-device batches short (about 3 s), so that a stop never has to wait behind a long batch.
-19. As a skill maintainer, I want the button devices found by name rather than event number, so that the watcher survives reboots that renumber `/dev/input`.
-20. As a skill maintainer, I want the watcher's input handling testable from recorded `getevent` output, so that I can verify the gesture rules without a phone.
-21. As a skill maintainer, I want the hook's decision testable from a JSON tool call, so that the rules for blocking commands are covered in CI.
-22. As a phone owner on a different Android phone, I want a clear message if the button devices can't be found, so that I know the stop gesture isn't available rather than wrongly assuming it is.
+12. As a phone owner, I want Claude to stay stopped after my computer reboots until a new session reconnects, so that a reboot that wipes the stop state doesn't silently hand control back.
+13. As a phone owner, I want Claude to tell me the stop gesture whenever it starts controlling my phone, so that I know how to stop it before I need to.
+14. As a phone owner, I want the watcher to stop when the session ends, so that nothing keeps listening to my buttons afterwards.
+15. As a phone owner, I want leftover watchers from earlier sessions killed when a new session connects, so that stale processes don't pile up on my phone.
+16. As a phone owner, I want only the button devices watched, not the touchscreen, so that what I type and touch is never read or recorded.
+17. As a Claude agent, I want my adb commands refused with a clear reason while a stop is in place, so that I stop and report instead of retrying.
+18. As a Claude agent, I want reconnecting and checking the watcher to stay allowed while stopped, so that I can recover when the user says continue.
+19. As a Claude agent, I want guidance to keep on-device batches short (about 3 s), so that a stop never has to wait behind a long batch.
+20. As a skill maintainer, I want the button devices found by name rather than event number, so that the watcher survives reboots that renumber `/dev/input`.
+21. As a skill maintainer, I want the watcher's input handling testable from recorded `getevent` output, so that I can verify the gesture rules without a phone.
+22. As a skill maintainer, I want the hook's decision testable from a JSON tool call, so that the rules for blocking commands are covered in CI.
+23. As a phone owner on a different Android phone, I want a clear message if the button devices can't be found, so that I know the stop gesture isn't available rather than wrongly assuming it is.
 
 ## Implementation Decisions
 
@@ -54,11 +55,19 @@ Tested on a Galaxy S25 (Android 16):
   - A single volume press never triggers.
 - **Only live events count.** `getevent` reads `/dev/input` live and has no history, so earlier presses can't appear. As a backup, the watcher records the phone's `/proc/uptime` at start and ignores any line with an earlier timestamp.
 - **Stop state:**
-  - A stop is a file on this machine, keyed by device serial. It records the reason (`power`, `volume-sequence`, `watcher-down`) and the wall-clock time.
+  - A stop is a single file per machine, not per device: the hook can't tell which phone a command targets (commands use transport ids such as `adb -t 28`, not serials), so a stop blocks all adb.
+  - It records the reason (`power`, `volume-sequence`, `watcher-down`) and the wall-clock time.
+  - Location: `${XDG_RUNTIME_DIR:-$HOME/.cache}/android-wireless-debug/`, holding `stop` and the watcher's `watcher.pid`.
+    - `XDG_RUNTIME_DIR` is readable only by the user and wiped on reboot.
+    - The watcher and the hook both derive this path themselves, without relying on anything only Claude's shell knows.
+    - `/tmp` is avoided, because other users can create or delete files there.
   - The file persists until it is explicitly resumed.
   - Unlocking the phone, touching it, or reconnecting does not clear it.
 - **Stopping in-flight work.** On a stop, the watcher kills this machine's running `adb ... shell` processes for that device, except its own `getevent` stream.
-- **Fail-closed.** If the `getevent` stream ends unexpectedly (adb drop, phone reboot), the watcher writes a `watcher-down` stop.
+- **Fail-closed.**
+  - If the `getevent` stream ends unexpectedly (adb drop, phone reboot), the watcher writes a `watcher-down` stop.
+  - The hook also refuses adb when no watcher is running (no `watcher.pid`, or a dead process), treating it as `watcher-down`.
+  - This covers cases where no stop file can exist, e.g. after this machine reboots or after the watcher's `stop` command.
 - **Enforcement (new PreToolUse hook on Bash in the plugin).**
   - While a stop file exists, the hook refuses any command that invokes `adb`. The reason names the gesture and time and tells Claude to stop, inform the user and wait.
   - Allowed while stopped: the connect script, and the watcher's own status and resume commands.
@@ -90,6 +99,7 @@ Tested on a Galaxy S25 (Android 16):
   - the sequence spread over more than 3 s, a wrong order, and single presses do not trigger
   - touchscreen events are ignored
   - a stream ending writes `watcher-down`
+  - no watcher running (no pid file, or a stale pid) refuses adb
   - events timestamped before the start are ignored
   - the stop survives later events
   - `resume` clears it
