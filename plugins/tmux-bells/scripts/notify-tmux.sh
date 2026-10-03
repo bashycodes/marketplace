@@ -3,7 +3,7 @@
 #   notify-tmux.sh alert <stop|ask|perm>
 #                          - unless the pane is visible in a focused client: mark the window
 #                            with @claude_waiting=<reason> and ring the pane bell
-#                            (tmux config maps it to an emoji via @claude_badge, see /claude-bells:setup)
+#                            (tmux config maps it to an emoji via @claude_badge, see /tmux-bells:setup)
 #   notify-tmux.sh clear   - remove the mark (you submitted a prompt, or a tool ran = Claude is
 #                            working again; the next Stop re-marks it)
 # The bell travels tmux -> outer terminal (Windows Terminal, or the SSH client's terminal).

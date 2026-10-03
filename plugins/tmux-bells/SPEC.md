@@ -1,6 +1,6 @@
-# Claude Bells — attention notifications for Claude Code in WSL + tmux
+# tmux-bells — attention notifications for Claude Code in WSL + tmux
 
-Status: packaged as a Claude Code plugin (claude-bells). The original design was verified live; the 😴/🔔 split and clear-on-any-tool are verified on a scratch window only, with the live check pending.
+Status: packaged as a Claude Code plugin (tmux-bells). The original design was verified live; the 😴/🔔 split and clear-on-any-tool are verified on a scratch window only, with the live check pending.
 
 ## Problem Statement
 
@@ -25,10 +25,10 @@ The whole thing runs on signals that already exist: Claude Code hooks, tmux opti
 
 ### Packaging
 
-It ships as a Claude Code plugin, `claude-bells`, in a public plugin marketplace, and installs in two steps:
+It ships as a Claude Code plugin, `tmux-bells`, in a public plugin marketplace, and installs in two steps:
 
 1. **Install the plugin from the marketplace.** It brings the hook script and the hook wiring, which replace the hand-edited hook entries and hand-copied script of the first version. The script does nothing outside tmux, so installing the plugin is harmless for someone who doesn't use tmux.
-2. **Run `/claude-bells:setup` once.** tmux and terminal settings live outside anything a plugin can install, so this user-invoked skill wires them: the badge in the tmux status bar, the tmux focus and bell options, and the terminal's bell setting. It also removes hook entries left over from a hand-wired install, so alerts don't fire twice, and ends with a check on a scratch window.
+2. **Run `/tmux-bells:setup` once.** tmux and terminal settings live outside anything a plugin can install, so this user-invoked skill wires them: the badge in the tmux status bar, the tmux focus and bell options, and the terminal's bell setting. It also removes hook entries left over from a hand-wired install, so alerts don't fire twice, and ends with a check on a scratch window.
 
 ### Behavior matrix
 
@@ -89,7 +89,7 @@ Claude waking itself up (a background task finishing, a monitor firing, a schedu
 30. As a user, I want the reason-to-emoji mapping kept only in my own tmux config, apart from the plugin, so that I can change a symbol without touching the plugin.
 31. As a future maintainer (a person or an agent), I want this spec to capture the decisions and their reasons, so that I can rebuild or extend the plugin without rediscovering the pitfalls.
 32. As a Claude Code user, I want to install the Claude side with one command from the marketplace, so that I don't hand-edit hook entries into my Claude settings or copy a script into place.
-33. As a tmux user, I want one setup command, `/claude-bells:setup`, to wire my tmux config and my terminal's bell setting while keeping my existing status-bar formats, and to tell me which setting to change when it can't configure my terminal itself, so that the parts no plugin can install are still one step away.
+33. As a tmux user, I want one setup command, `/tmux-bells:setup`, to wire my tmux config and my terminal's bell setting while keeping my existing status-bar formats, and to tell me which setting to change when it can't configure my terminal itself, so that the parts no plugin can install are still one step away.
 34. As a Claude Code user who doesn't use tmux, I want the plugin to stay inert, so that installing it costs me nothing.
 35. As a user of the earlier hand-wired version, I want setup to remove my old hook entries, so that moving to the plugin doesn't make every alert fire twice.
 36. As a tmux user, I want a prefix key that clears the badge on the current window, so that I can dismiss a session I've noticed but won't answer yet without sending it a prompt.
