@@ -1,14 +1,14 @@
 ---
 name: setup
-description: One-time per-machine wiring for claude-bells. Adds the 😴/🔔 badge and a prefix-a clear key to your tmux tabs, makes your terminal react to the bell, and retires any hand-wired hooks.
+description: One-time per-machine wiring for tmux-bells. Adds the 😴/🔔 badge and a prefix-a clear key to your tmux tabs, makes your terminal react to the bell, and retires any hand-wired hooks.
 disable-model-invocation: true
 ---
 
-# claude-bells setup
+# tmux-bells setup
 
 The plugin's hooks already run on their own. When Claude needs you, they set the tmux window option `@claude_waiting` to `stop`, `ask` or `perm` and ring the pane bell. They skip both while the pane is visible in a focused client. The hooks can't reach tmux config or terminal settings, so this skill wires those, once per machine.
 
-The plugin script is `../../scripts/notify-tmux.sh`, relative to this skill's base directory. Back up every file before you edit it, as `<file>.bak-claude-bells`. Work through the steps in order; each one ends on its **done when** line.
+The plugin script is `../../scripts/notify-tmux.sh`, relative to this skill's base directory. Back up every file before you edit it, as `<file>.bak-tmux-bells`. Work through the steps in order; each one ends on its **done when** line.
 
 ## 1. Preconditions
 
@@ -25,8 +25,8 @@ Find the loaded config with `tmux display -p '#{config_files}'`. It's usually `~
 **Badge mapping.** Add this block unless the config already defines `@claude_badge`. An existing definition is the user's own emoji choice; keep it as it is.
 
 ```tmux
-# claude-bells: badge for a Claude Code session waiting in this window.
-# @claude_waiting is set by the claude-bells plugin: stop = finished its turn, ask = asked a question, perm = wants permission.
+# tmux-bells: badge for a Claude Code session waiting in this window.
+# @claude_waiting is set by the tmux-bells plugin: stop = finished its turn, ask = asked a question, perm = wants permission.
 set -g @claude_badge "#{?#{==:#{@claude_waiting},stop}, 😴,}#{?#{==:#{@claude_waiting},ask}, 🔔,}#{?#{==:#{@claude_waiting},perm}, 🔔,}"
 set -g focus-events on
 ```
@@ -84,7 +84,9 @@ Look for hook entries whose command contains `notify-tmux.sh` in:
 
 Remove only those entries, keep every other setting, and confirm the result is still valid JSON with `jq -e .`. If the old script file is left over, name its path and offer to delete it.
 
-**Done when:** none of those files mention `notify-tmux.sh`.
+If the plugin's old name, `claude-bells`, is still installed (a `claude-bells@bashy-marketplace` key in `enabledPlugins` in those files, whether `true` or `false`), Claude Code reports it as not found in the marketplace on every start. It loads nothing, so it does no harm, but tell the user to run `/plugin uninstall claude-bells@bashy-marketplace` to clear the error.
+
+**Done when:** none of those files mention `notify-tmux.sh`, and `claude-bells` is not installed.
 
 ## 5. Verify
 
