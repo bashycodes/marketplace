@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Tests for plugins/claude-bells/scripts/notify-tmux.sh against a private tmux server
-# (own socket; your real tmux sessions are never touched). Run: bash tests/claude-bells/notify-tmux.test.sh
+# Tests for plugins/tmux-bells/scripts/notify-tmux.sh against a private tmux server
+# (own socket; your real tmux sessions are never touched). Run: bash tests/tmux-bells/notify-tmux.test.sh
 # The badge mapping under test is the one the setup skill tells users to install.
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-SCRIPT=$ROOT/plugins/claude-bells/scripts/notify-tmux.sh
-SKILL=$ROOT/plugins/claude-bells/skills/setup/SKILL.md
+SCRIPT=$ROOT/plugins/tmux-bells/scripts/notify-tmux.sh
+SKILL=$ROOT/plugins/tmux-bells/skills/setup/SKILL.md
 
 TMP=$(mktemp -d); SOCK=$TMP/tmux.sock
 t() { tmux -S "$SOCK" "$@"; }
