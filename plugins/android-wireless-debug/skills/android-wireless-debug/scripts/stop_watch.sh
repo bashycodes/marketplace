@@ -138,10 +138,17 @@ kill_tree() {  # without setsid there is no group to kill: children first
 stop() {
   local pid
   rm -f "$STATE/unavailable"
-  pid=$(cat "$STATE/watcher.pid" 2>/dev/null) || return 0
+  pid=$(cat "$STATE/watcher.pid" 2>/dev/null)
   rm -f "$STATE/watcher.pid"
-  is_watcher "$pid" || return 0
-  kill -TERM -- "-$pid" 2>/dev/null || kill_tree "$pid"
+  if [ -n "$pid" ] && is_watcher "$pid"; then
+    kill -TERM -- "-$pid" 2>/dev/null || kill_tree "$pid"
+  fi
+  # A watcher killed with SIGKILL runs no trap and leaves its pieces behind,
+  # its adb stream still reading the buttons. There is one watcher per
+  # machine, so sweep up any by command line.
+  pkill -TERM -f '^([^ ]+ )?([^ ]*/)?stop_watch\.sh _run ' 2>/dev/null
+  pkill -TERM -f '^([^ ]+ )?([^ ]*/)?adb(\.exe)? (.* )?shell -tt .*getevent -lt' 2>/dev/null
+  return 0
 }
 
 alive() {

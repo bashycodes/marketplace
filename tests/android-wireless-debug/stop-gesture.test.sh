@@ -28,7 +28,9 @@ case "\$*" in
                      done
                      sleep "\${FAKE_DELAY:-0}"
                      [ -n "\${FAKE_EVENTS:-}" ] && cat \$FAKE_EVENTS
-                     [ -n "\${FAKE_HOLD:-}" ] && sleep 600 ;;
+                     if [ -n "\${FAKE_HOLD:-}" ]; then
+                       trap 'kill \$! 2>/dev/null; exit 143' TERM; sleep 600 & wait
+                     fi ;;
   *"input tap"*)     trap 'kill \$! 2>/dev/null; exit 143' TERM
                      sleep 30 & wait ;;   # a long on-device batch
   *"/proc/uptime"*)  echo "\${FAKE_UPTIME:-57650.00} 1000.00" ;;
@@ -168,6 +170,8 @@ watch_ stop; rm -rf "$AWD_STATE_DIR"; FAKE_EVENTS= watch_ start 28; settle
 FAKE_HOLD=1 watch_ start 28; settle
 check "reconnect clears a lost-stream stop" allow "$(decision "$TAP")"
 
+start; kill -9 "$(cat "$AWD_STATE_DIR/watcher.pid")"; settle 0.3   # SIGKILL: no trap runs
+check "SIGKILLed watcher: adb refused"      deny "$(decision "$TAP")"
 watch_ stop; settle 0.3
 check "stop leaves nothing running"         0    "$(pgrep -f "$SCRIPTS/stop_watch.sh _run|^sleep 600$" | wc -l | tr -d ' ')"
 
