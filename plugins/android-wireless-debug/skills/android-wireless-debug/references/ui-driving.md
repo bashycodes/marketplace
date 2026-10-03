@@ -162,9 +162,9 @@ file.
 ## Launching and navigating apps
 
 ```bash
-$D shell monkey -p com.example -c android.intent.category.LAUNCHER 1   # launch as the user would
-$D shell am start -n com.example/.MainActivity                          # direct; exported activities only
-$D shell am force-stop com.example                                      # force a cold start next time
+$D shell cmd package resolve-activity --brief -c android.intent.category.LAUNCHER com.example | tail -1   # -> com.example/.MainActivity
+$D shell am start -n com.example/.MainActivity      # launch it; exported activities only
+$D shell am force-stop com.example                  # force a cold start next time
 ```
 
 `am start` on a **non-exported** activity is refused:
@@ -178,8 +178,16 @@ addressable from the shell. Navigate through the app's own UI instead. It is
 still worth one attempt, since exported activities start fine and save a lot of
 tapping.
 
-`monkey` is the most reliable launcher: it resolves the launcher intent the same
-way the home screen does, so you do not need to know the activity name.
+`resolve-activity` finds the app's entry point the same way the home screen
+does, so you do not need to know the activity name; the home screen then starts
+it explicitly, and so should you. Two shortcuts that look equivalent and aren't:
+
+- `am start -a MAIN -c LAUNCHER -p <pkg>` — implicit `am start` only matches
+  activities that also declare `CATEGORY_DEFAULT`. Many launcher activities
+  don't, so it fails with "unable to resolve Intent" on some apps and works on
+  others.
+- `monkey -p <pkg> ... 1` — launches fine, but turns auto-rotate on as it exits,
+  flipping the user's rotation setting behind their back.
 
 ## Knowing which screen you are on
 
@@ -199,7 +207,7 @@ Once you know the route to the screen under test, collapse it into one command:
 
 ```bash
 D="adb -t 5"
-$D shell monkey -p com.example -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+$D shell am start -n "$($D shell cmd package resolve-activity --brief -c android.intent.category.LAUNCHER com.example | tail -1 | tr -d '\r')" >/dev/null 2>&1
 sleep 5
 $D shell input tap 76 172;   sleep 2      # open drawer
 $D shell input tap 825 221;  sleep 3      # settings

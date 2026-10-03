@@ -187,7 +187,7 @@ whole thing in one command with sleeps between steps:
 ```bash
 D="adb -t 5"
 $D install -r app.apk
-$D shell monkey -p com.example -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+$D shell am start -n "$($D shell cmd package resolve-activity --brief -c android.intent.category.LAUNCHER com.example | tail -1 | tr -d '\r')" >/dev/null 2>&1
 sleep 5
 $D shell input tap 76 172;  sleep 2
 $D shell input tap 825 221; sleep 3
@@ -227,6 +227,14 @@ This is not a lab device. It holds their real messages, photos and accounts.
   `SecurityException: ... not exported from uid NNNN`. That is correct behaviour,
   not a broken build. Navigate through the app's own UI instead. Exported
   activities do start fine, so one attempt is always worth it.
+- **Don't launch apps with `monkey`.** Even a one-event
+  `monkey -p <pkg> ... 1` turns auto-rotate on as it exits, silently changing
+  the user's setting every session. Resolve the launcher activity and start it
+  explicitly instead (`cmd package resolve-activity --brief -c
+  android.intent.category.LAUNCHER <pkg>`, then `am start -n` on the last line).
+  Don't use `am start -a MAIN -c LAUNCHER -p <pkg>`: implicit `am start` only
+  matches activities that also declare `CATEGORY_DEFAULT`, which many launcher
+  activities don't — it fails with "unable to resolve Intent".
 - **The resumed activity often doesn't change when the screen does.** Modern apps
   put detail screens, bottom sheets and dialogs in *fragments*, so
   `dumpsys activity activities | grep ResumedActivity` keeps naming the host
