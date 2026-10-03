@@ -1,0 +1,90 @@
+add device 1: /dev/input/event10
+  name:     "akm-digital-hall"
+  events:
+    REL (0002): REL_WHEEL            
+  input props:
+    <none>
+add device 2: /dev/input/event9
+  name:     "sec_touchproximity"
+  events:
+    ABS (0003): 003e                  : value 255, min 0, max -1, fuzz 0, flat 0, resolution 0
+  input props:
+    INPUT_PROP_DIRECT
+add device 3: /dev/input/event8
+  name:     "sec_touchpad"
+  events:
+    KEY (0001): KEY_WAKEUP            0118                  0119                  BTN_TOOL_FINGER      
+                BTN_TOOL_QUINTTAP     BTN_TOUCH             BTN_TOOL_DOUBLETAP    BTN_TOOL_TRIPLETAP   
+                BTN_TOOL_QUADTAP      0226                  02be                 
+    ABS (0003): ABS_X                 : value 0, min 0, max 4095, fuzz 0, flat 0, resolution 0
+                ABS_Y                 : value 0, min 0, max 4095, fuzz 0, flat 0, resolution 0
+                ABS_MT_SLOT           : value 0, min 0, max 9, fuzz 0, flat 0, resolution 0
+                ABS_MT_TOUCH_MAJOR    : value 0, min 0, max 255, fuzz 0, flat 0, resolution 0
+                ABS_MT_TOUCH_MINOR    : value 0, min 0, max 255, fuzz 0, flat 0, resolution 0
+                ABS_MT_POSITION_X     : value 0, min 0, max 4095, fuzz 0, flat 0, resolution 0
+                ABS_MT_POSITION_Y     : value 0, min 0, max 4095, fuzz 0, flat 0, resolution 0
+                ABS_MT_TRACKING_ID    : value 0, min 0, max 65535, fuzz 0, flat 0, resolution 0
+  input props:
+    INPUT_PROP_POINTER
+add device 4: /dev/input/event7
+  name:     "sec_touchscreen"
+  events:
+    KEY (0001): KEY_WAKEUP            0118                  0119                  BTN_TOOL_FINGER      
+                BTN_TOUCH             0226                  02be                 
+    ABS (0003): ABS_X                 : value 0, min 0, max 4095, fuzz 0, flat 0, resolution 0
+                ABS_Y                 : value 0, min 0, max 4095, fuzz 0, flat 0, resolution 0
+                ABS_MT_SLOT           : value 0, min 0, max 9, fuzz 0, flat 0, resolution 0
+                ABS_MT_TOUCH_MAJOR    : value 0, min 0, max 255, fuzz 0, flat 0, resolution 0
+                ABS_MT_TOUCH_MINOR    : value 0, min 0, max 255, fuzz 0, flat 0, resolution 0
+                ABS_MT_POSITION_X     : value 0, min 0, max 4095, fuzz 0, flat 0, resolution 0
+                ABS_MT_POSITION_Y     : value 0, min 0, max 4095, fuzz 0, flat 0, resolution 0
+                ABS_MT_TRACKING_ID    : value 0, min 0, max 65535, fuzz 0, flat 0, resolution 0
+  input props:
+    INPUT_PROP_DIRECT
+add device 5: /dev/input/event6
+  name:     "sec_vibrator_inputff"
+  events:
+    FF  (0015): FF_PERIODIC           FF_SINE               FF_CUSTOM             FF_GAIN              
+  input props:
+    <none>
+add device 6: /dev/input/event5
+  name:     "als_rear"
+  events:
+    REL (0002): REL_X                 REL_RX                REL_RY                REL_RZ               
+                REL_MISC             
+    ABS (0003): ABS_Y                 : value 16385, min 0, max 0, fuzz 0, flat 0, resolution 0
+                ABS_Z                 : value 8193, min 0, max 0, fuzz 0, flat 0, resolution 0
+                ABS_RX                : value 8193, min 0, max 0, fuzz 0, flat 0, resolution 0
+                ABS_RY                : value 1, min 0, max 0, fuzz 0, flat 0, resolution 0
+  input props:
+    <none>
+add device 7: /dev/input/event4
+  name:     "pmic_resin"
+  events:
+    KEY (0001): KEY_VOLUMEDOWN       
+  input props:
+    <none>
+add device 8: /dev/input/event3
+  name:     "pmic_pwrkey"
+  events:
+    KEY (0001): KEY_POWER            
+  input props:
+    <none>
+add device 9: /dev/input/event2
+  name:     "meta_event"
+  events:
+    REL (0002): REL_HWHEEL            REL_DIAL             
+  input props:
+    <none>
+add device 10: /dev/input/event1
+  name:     "certify_hall"
+  events:
+    SW  (0005): SW_FRONT_PROXIMITY*  
+  input props:
+    <none>
+add device 11: /dev/input/event0
+  name:     "gpio-keys"
+  events:
+    KEY (0001): KEY_VOLUMEUP         
+  input props:
+    <none>

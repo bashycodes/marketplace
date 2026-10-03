@@ -15,6 +15,12 @@ Triggers when you hand over device details (an `IP:port`, a pairing code, "wirel
 
 Whenever steps 2–4 connect, the script opens the persistent port and reconnects on it, so the next session succeeds at step 1. The port lasts until the phone reboots.
 
+## Taking the phone back
+
+Once connected, **press the power button, or volume up-down-up-down** within 3 seconds, to stop Claude from the phone itself. A PreToolUse hook then refuses Claude's adb commands (and tools such as scrcpy, fastboot, gradle install tasks, flutter run), until you tell Claude to continue. Its `adb -t <id> shell`/`exec-out` commands already running are killed, along with the script that launched them. A SessionEnd hook stops the watcher when the session that connected ends. A background watcher (`scripts/stop_watch.sh`, started by the connect script) reads the phone's button events. It sees only those buttons, never the touchscreen.
+
+The hook fails closed. If nothing is watching for the gesture (no connection yet, or the watcher lost the phone), it refuses adb, and `adb_connect.sh` restarts the watcher. Because the hook applies to every Claude Code session while the plugin is enabled, adb used for other work also needs `adb_connect.sh` first.
+
 ## Requirements
 
 - `adb` (Android platform-tools) on `PATH`
@@ -27,6 +33,8 @@ Whenever steps 2–4 connect, the script opens the persistent port and reconnect
 |---|---|
 | `skills/android-wireless-debug/SKILL.md` | The workflow: connect → look → root-cause → fix → reinstall → look again |
 | `scripts/adb_connect.sh` | Connection cascade |
+| `scripts/stop_watch.sh` | Watches the phone's buttons for the stop gesture |
+| `scripts/stop_hook.sh` + `hooks/hooks.json` | PreToolUse hook that refuses adb while stopped or unwatched |
 | `scripts/ui_find.sh` | Resolve a UI element to tap coordinates via uiautomator dump |
 | `references/ui-driving.md` | Driving the UI without eyeballing pixels |
 | `references/diagnostics.md` | Theme, insets, packaging and crash diagnostics from system state |

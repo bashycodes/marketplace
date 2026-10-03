@@ -1,0 +1,5 @@
+add device 8: /dev/input/event3
+[   57686.374700] /dev/input/event3: EV_KEY       KEY_POWER            DOWN                
+[   57686.374700] /dev/input/event3: EV_SYN       SYN_REPORT           00000000            
+[   57686.506865] /dev/input/event3: EV_KEY       KEY_POWER            UP                  
+[   57686.506865] /dev/input/event3: EV_SYN       SYN_REPORT           00000000            
