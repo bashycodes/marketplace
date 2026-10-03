@@ -63,14 +63,15 @@ Tested on a Galaxy S25 (Android 16):
     - `/tmp` is avoided, because other users can create or delete files there.
   - The file persists until it is explicitly resumed.
   - Unlocking the phone, touching it, or reconnecting does not clear it.
-- **Stopping in-flight work.** On a stop, the watcher kills this machine's running `adb ... shell` processes for that device, except its own `getevent` stream.
+- **Stopping in-flight work.** On a stop, the watcher kills this machine's running `adb -t <id> shell` / `exec-out` processes for that device, except its own `getevent` stream. It first kills a non-interactive shell that launched one (`bash -c`, as Claude's Bash tool runs commands), so the script's later adb lines never start. Interactive terminals are left alone. Other adb commands (`install`, `-s <serial>`) are not killed.
 - **Fail-closed.**
   - If the `getevent` stream ends unexpectedly (adb drop, phone reboot), the watcher writes a `watcher-down` stop.
   - The hook also refuses adb when no watcher is running (no `watcher.pid`, or a dead process), treating it as `watcher-down`.
   - This covers cases where no stop file can exist, e.g. after this machine reboots or after the watcher's `stop` command.
 - **Enforcement (new PreToolUse hook on Bash in the plugin).**
   - While a stop file exists, the hook refuses any command that invokes `adb`. The reason names the gesture and time and tells Claude to stop, inform the user and wait.
-  - Allowed while stopped: the connect script, and the watcher's own status and resume commands.
+  - Also covered: tools that drive the phone without naming adb (`scrcpy`, `fastboot`, gradle `install*`/`connected*` tasks, `flutter run|install|drive|test|attach`, `run-android`, `run:android`), and `ui_find.sh`.
+  - Allowed while stopped: the connect script, any `stop_watch.sh` command, and adb subcommands that never touch the phone's screen or apps (`disconnect`, `devices`, `kill-server`, `mdns`, `version`, `usb`).
   - Also refused: commands that delete the stop file directly.
 - **Interface: watcher commands.** `start <transport>`, `status`, `resume`, `stop`.
 - **Lifecycle changes in the connect script:**
@@ -82,6 +83,7 @@ Tested on a Galaxy S25 (Android 16):
   - Only `resume` after an explicit "continue" from the user.
   - Keep on-device batches to about 3 s or less.
   - Run the watcher's `stop` command when finished with the phone.
+- **Session end.** The PreToolUse hook records the session id that ran the connect script. A SessionEnd hook stops the watcher when that session ends; other sessions ending leave it running.
 - **Phones without the buttons.** If no button devices are found, the watcher reports "stop gesture unavailable". The session continues, and Claude must tell the user that the gesture is unavailable.
 - **Version bump.** Bump the plugin to 1.2.0 in both the plugin manifest and the marketplace manifest.
 
@@ -105,7 +107,12 @@ Tested on a Galaxy S25 (Android 16):
   - the stop survives later events
   - `resume` clears it
   - reconnect keeps a user's stop but clears `watcher-down`
-  - a stop kills an in-flight batch but not the watcher
+  - a stop kills an in-flight batch but not the watcher, and ends the `bash -c` script that launched it
+  - a stop keeps its first reason through later presses and touches
+  - fixtures stream with CRLF line endings, as through `adb shell -tt`
+  - the suite runs with mawk as `awk` when installed
+  - other phone tools are refused while stopped
+  - only the connecting session's end stops the watcher
   - the hook allows the connect script and the watcher commands while stopped
   - the hook refuses `rm` of the stop file
   - non-`adb` commands are never blocked

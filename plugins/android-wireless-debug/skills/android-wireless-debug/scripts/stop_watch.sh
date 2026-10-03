@@ -31,7 +31,11 @@ write_stop() {  # write_stop <reason>
 # has no history. (Don't filter on /proc/uptime: it counts deep sleep, event
 # stamps don't, so it runs hours ahead and would discard every press.)
 detect() {
-  awk '
+  # mawk (Debian/Ubuntu's default awk) buffers piped input, so a press would
+  # sit unread; -W interactive makes it read line by line.
+  local awk=awk
+  case "$(awk -W version 2>&1)" in *mawk*) awk="awk -W interactive" ;; esac
+  $awk '
     function stamp() { match($0, /[0-9]+\.[0-9]+/); return substr($0, RSTART, RLENGTH) + 0 }
     { sub(/\r$/, "") }
     $NF != "DOWN" || $(NF-2) != "EV_KEY" { next }
@@ -50,13 +54,20 @@ detect() {
 
 # Kill this machine's adb commands still running against the phone, such as a
 # batch of taps in one `adb shell`, so a stop does not wait for them to finish.
-# The watcher's own getevent stream is spared.
+# A non-interactive shell that launched one (`bash -c`, as Claude's Bash tool
+# runs commands) is killed first, so its later adb lines never start; an
+# interactive terminal is left alone. The watcher's own stream is spared.
 kill_in_flight() {
-  local tid="$1" pid
+  local tid="$1" pid parent
   # Anchored on the program: adb itself (or a script run as adb), never a
   # process that merely mentions adb in its arguments.
   for pid in $(pgrep -f "^([^ ]+ )?([^ ]*/)?adb(\.exe)? (.* )?-t $tid (shell|exec-out)"); do
-    ps -o args= -p "$pid" 2>/dev/null | grep -q 'getevent -lt' || kill "$pid" 2>/dev/null
+    ps -o args= -p "$pid" 2>/dev/null | grep -q 'getevent -lt' && continue
+    parent=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+    if [ -n "$parent" ] && ps -o args= -p "$parent" 2>/dev/null | grep -qE '^([^ ]*/)?(ba|da|z|k)?sh (-[a-z]+ )*-[a-z]*c '; then
+      kill "$parent" 2>/dev/null
+    fi
+    kill "$pid" 2>/dev/null
   done
 }
 

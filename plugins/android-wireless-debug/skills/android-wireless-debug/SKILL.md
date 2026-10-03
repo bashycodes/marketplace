@@ -127,10 +127,16 @@ gesture. **Tell the user the gesture as soon as you connect**, before you start
 tapping.
 
 Either gesture makes the plugin's PreToolUse hook refuse every adb command, and
-`ui_find.sh`, with a reason naming the press and its time. (adb commands that
-never touch the phone's screen or apps stay allowed: `disconnect`, `devices`,
-`kill-server`, `mdns`, `version`, `usb`.) It also kills adb
-commands already running against that phone. When that happens:
+`ui_find.sh`, with a reason naming the press and its time. Tools that drive the
+phone without naming adb are refused too: `scrcpy`, `fastboot`, gradle
+`install*`/`connected*` tasks, `flutter run|install|drive|test|attach`,
+`run-android`. (adb commands that never touch the phone's screen or apps stay
+allowed: `disconnect`, `devices`, `kill-server`, `mdns`, `version`, `usb`.)
+
+It also kills the `adb -t <id> shell` and `exec-out` commands already running
+against that phone, and the `bash -c` script that launched them, so the
+script's later lines never run. Other adb commands (`install`, `-s <serial>`)
+are left to finish. When that happens:
 
 - **Stop.** Tell the user you've stopped and wait. Don't retry, work around the
   hook, or touch the stop file.
@@ -244,7 +250,8 @@ This is not a lab device. It holds their real messages, photos and accounts.
 - **Screenshots capture whatever is on screen**, including notifications and
   personal content. Take what the task needs; don't wander through unrelated apps.
 - **Disconnect when you're done**: `scripts/stop_watch.sh stop`, then
-  `adb disconnect <ip:port>`. Pairing survives,
+  `adb disconnect <ip:port>`. If the session ends first, a SessionEnd hook stops
+  the watcher. Pairing survives,
   so reconnecting later is cheap — there's no reason to sit on a live connection
   to someone's phone.
 - **`adb disconnect` does not close the port.** It drops your end only; a port

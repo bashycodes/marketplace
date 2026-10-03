@@ -27,7 +27,8 @@ case "\$*" in
                        [ "\$(grep -o /dev/input/ <<<"\$seg" | wc -l)" -gt 1 ] && { echo "Usage: getevent ... [device]"; exit 1; }
                      done
                      sleep "\${FAKE_DELAY:-0}"
-                     [ -n "\${FAKE_EVENTS:-}" ] && cat \$FAKE_EVENTS
+                     # -tt: a terminal, so lines end in CRLF, as from a real phone
+                     [ -n "\${FAKE_EVENTS:-}" ] && cat \$FAKE_EVENTS | sed 's/\$/\r/' 
                      if [ -n "\${FAKE_HOLD:-}" ]; then
                        trap 'kill \$! 2>/dev/null; exit 143' TERM; sleep 600 & wait
                      fi ;;
@@ -38,6 +39,9 @@ esac
 exit 0
 EOF
 chmod +x "$TMP/bin/adb"
+# mawk (Debian/Ubuntu's default awk) buffers piped input; when installed, make
+# it the plain `awk` so the watcher is tested against it.
+command -v mawk >/dev/null 2>&1 && ln -s "$(command -v mawk)" "$TMP/bin/awk"
 export PATH="$TMP/bin:$PATH"
 
 fails=0
@@ -47,9 +51,9 @@ check() {  # check <description> <expected> <actual>
 }
 watch_() { bash "$SCRIPTS/stop_watch.sh" "$@" >/dev/null 2>&1; }
 # hook <command>: the hook's decision for a Bash call: allow, or deny:<reason>.
-hook() {
+hook() {  # hook <command> [session_id]
   local out
-  out=$(jq -n --arg c "$1" '{tool_name:"Bash",tool_input:{command:$c}}' | bash "$SCRIPTS/stop_hook.sh")
+  out=$(jq -n --arg c "$1" --arg s "${2:-s1}" '{session_id:$s,tool_name:"Bash",tool_input:{command:$c}}' | bash "$SCRIPTS/stop_hook.sh")
   [ -z "$out" ] && { echo allow; return; }
   echo "$(jq -r .hookSpecificOutput.permissionDecision <<<"$out"):$(jq -r .hookSpecificOutput.permissionDecisionReason <<<"$out")"
 }
@@ -64,6 +68,9 @@ start() {  # start <fixture...>: a fresh session on a live phone replaying fixtu
 start "$FIX/power.txt"
 check "power press stops adb"            deny "$(decision 'adb -t 28 shell input tap 1 1')"
 check "reason names the power press"      yes  "$(hook "$TAP" | grep -q 'power button' && echo yes)"
+
+start "$FIX/power.txt" "$FIX/volume-sequence.txt" "$FIX/touch-and-wake.txt"
+check "a stop keeps its first reason"       yes  "$(bash "$SCRIPTS/stop_watch.sh" status 2>&1 | grep -q 'stopped: power' && echo yes)"
 
 start
 check "no presses: adb allowed"          allow "$(decision 'adb -t 28 shell input tap 1 1')"
@@ -104,6 +111,13 @@ start
 check "deleting the state dir refused"     deny "$(decision 'rm -rf ~/.cache/android-wireless-debug')"
 check "deleting the state dir via XDG refused" deny "$(decision 'rm -rf "${XDG_RUNTIME_DIR}/android-wireless-debug"')"
 check "deleting the real state dir refused" deny "$(decision "rm -rf $AWD_STATE_DIR")"
+start "$FIX/power.txt"
+for c in './gradlew installDebug' './gradlew connectedDebugAndroidTest' 'scrcpy -s 100.1.2.3:54321' \
+         'flutter run -d 100.1.2.3:54321' 'fastboot reboot' 'npx react-native run-android' 'npx expo run:android'; do
+  check "stopped: $c refused"              deny "$(decision "$c")"
+done
+check "stopped: gradle build allowed"      allow "$(decision './gradlew assembleDebug')"
+start
 check "plugin paths and names still fine"  allow "$(decision 'cat plugins/android-wireless-debug/README.md; git commit -m "android-wireless-debug 1.2.0"')"
 check "watching: deleting the stop file refused" deny "$(decision 'rm ~/.cache/android-wireless-debug/stop')"
 
@@ -118,6 +132,15 @@ kill $bystander 2>/dev/null
 check "stop kills the running batch"        dead "$(kill -0 $batch 2>/dev/null && echo alive || echo dead)"
 check "stop spares the watcher itself"      yes  "$(kill -0 "$(cat "$AWD_STATE_DIR/watcher.pid")" 2>/dev/null && echo yes)"
 kill $batch 2>/dev/null
+
+# A stop also ends the script that sent the batch, so its later adb lines
+# never run.
+watch_ stop; rm -rf "$AWD_STATE_DIR"; : > "$FAKE_LOG"
+FAKE_HOLD=1 FAKE_DELAY=1.5 FAKE_EVENTS="$FIX/power.txt" watch_ start 28
+bash -c 'adb -t 28 shell input tap 1 1; adb -t 28 shell input text after-stop' & script=$!
+settle 2.5
+check "stop ends the rest of the script"    none "$(grep -q 'after-stop' "$FAKE_LOG" && echo ran || echo none)"
+kill $script 2>/dev/null
 
 # /proc/uptime counts deep sleep and getevent's clock does not, so on a real
 # phone uptime runs far ahead of event stamps (S25: 83567 vs ~60499).
@@ -173,6 +196,14 @@ watch_ stop; settle 0.3
 check "stop spares another state dir's watcher" yes "$(AWD_STATE_DIR=$other_state bash "$SCRIPTS/stop_watch.sh" status 2>&1 | grep -q '^watching' && echo yes)"
 AWD_STATE_DIR=$other_state watch_ stop
 
+# Session end stops the watcher, but only for the session that connected.
+start; hook 'bash scripts/adb_connect.sh' sess-A >/dev/null
+end_session() { jq -n --arg s "$1" '{session_id:$s,hook_event_name:"SessionEnd"}' | bash "$SCRIPTS/stop_hook.sh" session-end; settle 0.3; }
+end_session sess-B
+check "another session ending: still watching" yes "$(bash "$SCRIPTS/stop_watch.sh" status 2>&1 | grep -q '^watching' && echo yes)"
+end_session sess-A
+check "connecting session ending: watcher stopped" yes "$(bash "$SCRIPTS/stop_watch.sh" status 2>&1 | grep -q '^not running' && echo yes)"
+
 # Lifecycle: status, resume, reconnect, stop.
 start "$FIX/power.txt"
 check "status names the stop"               yes  "$(bash "$SCRIPTS/stop_watch.sh" status 2>&1 | grep -q 'stopped.*power' && echo yes)"
@@ -192,6 +223,6 @@ check "reconnect clears a lost-stream stop" allow "$(decision "$TAP")"
 start; kill -9 "$(cat "$AWD_STATE_DIR/watcher.pid")"; settle 0.3   # SIGKILL: no trap runs
 check "SIGKILLed watcher: adb refused"      deny "$(decision "$TAP")"
 watch_ stop; settle 0.3
-check "stop leaves nothing running"         0    "$(pgrep -f "$SCRIPTS/stop_watch.sh _run|^sleep 600$" | wc -l | tr -d ' ')"
+check "stop leaves nothing running"         0    "$(pgrep -f "_run $AWD_STATE_DIR |$TMP/bin/adb" | wc -l | tr -d ' ')"
 
 echo; [ $fails -eq 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }

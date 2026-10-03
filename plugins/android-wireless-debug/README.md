@@ -17,7 +17,7 @@ Whenever steps 2–4 connect, the script opens the persistent port and reconnect
 
 ## Taking the phone back
 
-Once connected, **press the power button, or volume up-down-up-down** within 3 seconds, to stop Claude from the phone itself. A PreToolUse hook then refuses Claude's adb commands, and adb commands already running are killed, until you tell Claude to continue. A background watcher (`scripts/stop_watch.sh`, started by the connect script) reads the phone's button events. It sees only those buttons, never the touchscreen.
+Once connected, **press the power button, or volume up-down-up-down** within 3 seconds, to stop Claude from the phone itself. A PreToolUse hook then refuses Claude's adb commands (and tools such as scrcpy, fastboot, gradle install tasks, flutter run), until you tell Claude to continue. Its `adb -t <id> shell`/`exec-out` commands already running are killed, along with the script that launched them. A SessionEnd hook stops the watcher when the session that connected ends. A background watcher (`scripts/stop_watch.sh`, started by the connect script) reads the phone's button events. It sees only those buttons, never the touchscreen.
 
 The hook fails closed. If nothing is watching for the gesture (no connection yet, or the watcher lost the phone), it refuses adb, and `adb_connect.sh` restarts the watcher. Because the hook applies to every Claude Code session while the plugin is enabled, adb used for other work also needs `adb_connect.sh` first.
 

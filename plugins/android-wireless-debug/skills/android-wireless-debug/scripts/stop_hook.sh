@@ -1,20 +1,41 @@
 #!/usr/bin/env bash
 # PreToolUse hook (Bash): refuse adb commands while the user's stop gesture is in
 # effect. Reads the tool call JSON on stdin; prints a deny decision, or nothing.
+#
+# `stop_hook.sh session-end` is the SessionEnd hook: it stops the watcher when
+# the session that connected (ran adb_connect.sh) ends.
 set -uo pipefail
 
 STATE="${AWD_STATE_DIR:-${XDG_RUNTIME_DIR:-$HOME/.cache}/android-wireless-debug}"
 INPUT=$(cat)
 
-# The Bash command. Falls back to the whole JSON when neither jq nor python3 is
-# around: that can only over-match (e.g. on the description), never miss.
-command_of() {
-  if command -v jq >/dev/null 2>&1; then jq -r '.tool_input.command // ""' <<<"$INPUT"
+# A field of the hook input: tool_input.command or session_id. Without jq or
+# python3 the command falls back to the whole JSON, which can only over-match
+# (e.g. on the description), never miss.
+field() {
+  if command -v jq >/dev/null 2>&1; then jq -r "$1 // \"\"" <<<"$INPUT"
   elif command -v python3 >/dev/null 2>&1; then
-    python3 -c 'import json,sys; print(json.load(sys.stdin).get("tool_input",{}).get("command",""))' <<<"$INPUT"
-  else printf '%s' "$INPUT"; fi
+    python3 -c 'import json,sys; d=json.load(sys.stdin)
+for k in sys.argv[1].lstrip(".").split("."): d=d.get(k,{}) if isinstance(d,dict) else {}
+print(d if isinstance(d,str) else "")' "$1" <<<"$INPUT"
+  elif [ "$1" = .tool_input.command ]; then printf '%s' "$INPUT"; fi
 }
-CMD=$(command_of)
+SESSION=$(field .session_id)
+
+if [ "${1:-}" = session-end ]; then
+  if [ -n "$SESSION" ] && [ "$(cat "$STATE/session" 2>/dev/null)" = "$SESSION" ]; then
+    bash "$(dirname "$0")/stop_watch.sh" stop >/dev/null 2>&1
+    rm -f "$STATE/session"
+  fi
+  exit 0
+fi
+
+CMD=$(field .tool_input.command)
+
+# Remember which session connected, so only its end stops the watcher.
+if grep -q 'adb_connect\.sh' <<<"$CMD" && [ -n "$SESSION" ]; then
+  mkdir -p "$STATE" && printf '%s\n' "$SESSION" > "$STATE/session"
+fi
 
 deny() {
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$1"
@@ -30,15 +51,17 @@ if grep -qE 'android-wireless-debug/stop($|[^-_.[:alnum:]])' <<<"$CMD" \
   deny "Do not touch the stop state directly. Use stop_watch.sh resume, and only after the user explicitly says to continue."
 fi
 
-# Commands that reach the phone: adb itself, or ui_find.sh (which runs adb).
+# Commands that reach the phone: adb itself, ui_find.sh (which runs adb), and
+# tools that drive a device through adb without naming it.
 # adb_connect.sh and stop_watch.sh stay allowed so a stopped session can recover.
 # adb subcommands that never touch the phone's screen or apps, such as
 # disconnecting, also stay allowed: every adb in the command must be one of them.
 rest=$(sed -E 's/adb_connect\.sh|stop_watch\.sh//g' <<<"$CMD")
 ADB='(^|[^[:alnum:]_-])adb($|[^[:alnum:]_-])'
 SAFE='(^|[^[:alnum:]_-])adb( +-[st] +[^ ;&|]+)* +(disconnect|devices|kill-server|mdns|version|usb)($|[^[:alnum:]_-])'
-grep -qE "$ADB|ui_find\.sh" <<<"$rest" || exit 0
-if ! grep -q 'ui_find\.sh' <<<"$rest" \
+TOOLS='(^|[^[:alnum:]_-])(scrcpy|fastboot)($|[^[:alnum:]_-])|gradlew?[^;&|]*[[:space:]:](install|connected|uninstall)[[:alnum:]]*|flutter[[:space:]]+(run|install|drive|test|attach)|run-android|run:android'
+grep -qE "$ADB|ui_find\.sh|$TOOLS" <<<"$rest" || exit 0
+if ! grep -qE "ui_find\.sh|$TOOLS" <<<"$rest" \
    && [ "$(grep -oE "$ADB" <<<"$rest" | wc -l)" = "$(grep -oE "$SAFE" <<<"$rest" | wc -l)" ]; then
   exit 0
 fi
