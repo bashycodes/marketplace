@@ -84,7 +84,7 @@ Look for hook entries whose command contains `notify-tmux.sh` in:
 
 Remove only those entries, keep every other setting, and confirm the result is still valid JSON with `jq -e .`. If the old script file is left over, name its path and offer to delete it.
 
-If the plugin's old name, `claude-bells`, is still installed (check `enabledPlugins` in those files), its hooks fire alongside these. Tell the user to run `/plugin uninstall claude-bells@bashy-marketplace`.
+If the plugin's old name, `claude-bells`, is still installed (a `claude-bells@bashy-marketplace` key in `enabledPlugins` in those files, whether `true` or `false`), Claude Code reports it as not found in the marketplace on every start. It loads nothing, so it does no harm, but tell the user to run `/plugin uninstall claude-bells@bashy-marketplace` to clear the error.
 
 **Done when:** none of those files mention `notify-tmux.sh`, and `claude-bells` is not installed.
 

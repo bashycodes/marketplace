@@ -10,11 +10,11 @@ Know when a Claude Code session running in tmux needs you, without watching it.
 
 Outside tmux the plugin does nothing.
 
-> **Renamed from `claude-bells`.** Plugin names starting with `claude-` are reserved, so this plugin is now `tmux-bells`. If you installed `claude-bells`, uninstall it and install `tmux-bells` (otherwise alerts fire twice):
+> **Renamed from `claude-bells`.** Plugin names starting with `claude-` are reserved, so this plugin is now `tmux-bells`. If you installed `claude-bells`, its alerts stop once the marketplace updates: Claude Code reports it as not found in the marketplace and loads nothing from it. Install `tmux-bells`, then uninstall `claude-bells` to clear the error:
 >
 > ```
-> /plugin uninstall claude-bells@bashy-marketplace
 > /plugin install tmux-bells@bashy-marketplace
+> /plugin uninstall claude-bells@bashy-marketplace
 > ```
 >
 > Your tmux config (`@claude_badge`, `@claude_waiting`, the prefix `a` binding) keeps working as is; no need to re-run setup.

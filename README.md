@@ -18,7 +18,7 @@ Each plugin lives under `plugins/<name>/`. Development files (tests, `package.js
 | Plugin | Description |
 |---|---|
 | [grill-over-ticktick](plugins/grill-over-ticktick) | Relay /grill-me question rounds to TickTick; answer on your phone; Claude ingests and keeps grilling. Requires Node ≥ 20. Works best with Matt Pocock's `mattpocock-skills` (its `grilling` skill); without it the skills fall back to the same grilling format inline. Run `/setup-ticktick` once. |
-| [tmux-bells](plugins/tmux-bells) | 😴/🔔 badge on the tmux tab + terminal bell when a Claude Code session needs you; silent while you watch. Run `/tmux-bells:setup` once after install. Renamed from `claude-bells`: uninstall that and install `tmux-bells`. |
+| [tmux-bells](plugins/tmux-bells) | 😴/🔔 badge on the tmux tab + terminal bell when a Claude Code session needs you; silent while you watch. Run `/tmux-bells:setup` once after install. Renamed from `claude-bells`, whose alerts stop once the marketplace updates: install `tmux-bells`, then uninstall `claude-bells`. |
 | [android-wireless-debug](plugins/android-wireless-debug) | Drive a real Android phone over ADB to see, test and fix an app — screenshots, UI taps, logcat/dumpsys, APK installs; connects even via USB-opened TCP from WSL. |
 
 Development: `npm test` (offline unit tests), `npm run typecheck`, and `npm run validate` — the local manifest check (`claude plugin validate` for the plugin and the marketplace). `validate` needs the `claude` CLI, so it is not run in CI; run it before pushing manifest changes.
