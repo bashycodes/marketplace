@@ -21,9 +21,13 @@ deny() {
   exit 0
 }
 
-# Deleting the stop file is resume's job, and resume needs the user's go-ahead.
-if grep -qE 'android-wireless-debug/stop($|[^-_.[:alnum:]])' <<<"$CMD" || grep -qF "$STATE/stop" <<<"$CMD"; then
-  deny "Do not touch the stop file directly. Use stop_watch.sh resume, and only after the user explicitly says to continue."
+# The stop state is stop_watch.sh's alone: clearing it is resume's job, and
+# resume needs the user's go-ahead. Deleting the whole state dir would also
+# let a reconnect forget the user's stop.
+if grep -qE 'android-wireless-debug/stop($|[^-_.[:alnum:]])' <<<"$CMD" \
+   || grep -qE '(\.cache|XDG_RUNTIME_DIR\}?|/run/user/[0-9]+)/android-wireless-debug($|[^-_.[:alnum:]])' <<<"$CMD" \
+   || grep -qF "$STATE" <<<"$CMD"; then
+  deny "Do not touch the stop state directly. Use stop_watch.sh resume, and only after the user explicitly says to continue."
 fi
 
 # Commands that reach the phone: adb itself, or ui_find.sh (which runs adb).
@@ -55,7 +59,7 @@ fi
 [ -f "$STATE/unavailable" ] && exit 0
 
 pid=$(cat "$STATE/watcher.pid" 2>/dev/null)
-if [ -z "$pid" ] || ! ps -o args= -p "$pid" 2>/dev/null | grep -q 'stop_watch\.sh _run'; then
+if [ -z "$pid" ] || ! ps -o args= -p "$pid" 2>/dev/null | grep -qF "stop_watch.sh _run $STATE "; then
   deny "The stop-gesture watcher is not running, so the user could not stop you from the phone. Connect with adb_connect.sh first; it starts the watcher."
 fi
 exit 0

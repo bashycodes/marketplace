@@ -60,8 +60,8 @@ kill_in_flight() {
   done
 }
 
-run() {  # run <transport_id> <device...>
-  local tid="$1"; shift
+run() {  # run <state_dir> <transport_id> <device...>
+  local tid="$2"; shift 2
   local reason dev script=""
   # getevent takes a single device, so run one per button device, all in one
   # adb shell: a single stream, and the touchscreen is never read. -tt gives
@@ -87,12 +87,16 @@ run() {  # run <transport_id> <device...>
 }
 
 # Event devices that report a power or volume key, from `getevent -pl`.
+# Touch devices are skipped even if they declare KEY_POWER (some
+# double-tap-to-wake drivers do): their stream would carry every touch.
 # Fails if the phone listed no input devices at all, i.e. it was not reached.
 button_devices() {
   adb -t "$1" shell getevent -pl 2>/dev/null | tr -d '\r' | awk '
-    /^add device/ { dev = $NF; seen = 1 }
-    /KEY_POWER|KEY_VOLUMEUP|KEY_VOLUMEDOWN/ && dev != "" { print dev; dev = "" }
-    END { exit !seen }'
+    function flush() { if (dev != "" && keys && !touch) print dev }
+    /^add device/ { flush(); dev = $NF; keys = touch = 0; seen = 1; next }
+    /KEY_POWER|KEY_VOLUMEUP|KEY_VOLUMEDOWN/ { keys = 1 }
+    /ABS_MT_POSITION|BTN_TOUCH|INPUT_PROP_DIRECT|INPUT_PROP_POINTER/ { touch = 1 }
+    END { flush(); exit !seen }'
 }
 
 start() {
@@ -117,9 +121,9 @@ start() {
   adb -t "$tid" shell pkill -f "'getevent -lt'" >/dev/null 2>&1
   # Own process group, so `stop` takes adb and awk down with the watcher.
   if command -v setsid >/dev/null 2>&1; then
-    setsid nohup bash "$0" _run "$tid" $devs >/dev/null 2>&1 < /dev/null &
+    setsid nohup bash "$0" _run "$STATE" "$tid" $devs >/dev/null 2>&1 < /dev/null &
   else
-    nohup bash "$0" _run "$tid" $devs >/dev/null 2>&1 < /dev/null &
+    nohup bash "$0" _run "$STATE" "$tid" $devs >/dev/null 2>&1 < /dev/null &
   fi
   echo $! > "$STATE/watcher.pid"
   say "power button, or volume up-down-up-down. Tell the user. (watching $devs)"
@@ -127,7 +131,7 @@ start() {
 
 # A pid file can outlive its watcher and the pid be reused, so check that the
 # process really is one.
-is_watcher() { ps -o args= -p "$1" 2>/dev/null | grep -q 'stop_watch\.sh _run'; }
+is_watcher() { ps -o args= -p "$1" 2>/dev/null | grep -qF "stop_watch.sh _run $STATE "; }
 
 kill_tree() {  # without setsid there is no group to kill: children first
   local child
@@ -143,11 +147,12 @@ stop() {
   if [ -n "$pid" ] && is_watcher "$pid"; then
     kill -TERM -- "-$pid" 2>/dev/null || kill_tree "$pid"
   fi
-  # A watcher killed with SIGKILL runs no trap and leaves its pieces behind,
-  # its adb stream still reading the buttons. There is one watcher per
-  # machine, so sweep up any by command line.
-  pkill -TERM -f '^([^ ]+ )?([^ ]*/)?stop_watch\.sh _run ' 2>/dev/null
-  pkill -TERM -f '^([^ ]+ )?([^ ]*/)?adb(\.exe)? (.* )?shell -tt .*getevent -lt' 2>/dev/null
+  # A watcher killed with SIGKILL runs no trap and leaves its pieces behind:
+  # its process-substitution subshell, still running the adb stream. Sweep up
+  # this state dir's leftovers by command line, and only this state dir's.
+  for pid in $(pgrep -f 'stop_watch\.sh _run '); do
+    ps -o args= -p "$pid" 2>/dev/null | grep -qF "stop_watch.sh _run $STATE " && kill_tree "$pid"
+  done
   return 0
 }
 

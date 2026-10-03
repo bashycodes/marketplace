@@ -101,6 +101,10 @@ check "stopped: adb devices allowed"       allow "$(decision 'adb devices -l')"
 check "stopped: disconnect then tap refused" deny "$(decision 'adb disconnect x; adb -t 28 shell input tap 1 1')"
 check "status says volume-sequence"         yes  "$(start "$FIX/volume-sequence.txt"; bash "$SCRIPTS/stop_watch.sh" status 2>&1 | grep -q 'volume-sequence' && echo yes)"
 start
+check "deleting the state dir refused"     deny "$(decision 'rm -rf ~/.cache/android-wireless-debug')"
+check "deleting the state dir via XDG refused" deny "$(decision 'rm -rf "${XDG_RUNTIME_DIR}/android-wireless-debug"')"
+check "deleting the real state dir refused" deny "$(decision "rm -rf $AWD_STATE_DIR")"
+check "plugin paths and names still fine"  allow "$(decision 'cat plugins/android-wireless-debug/README.md; git commit -m "android-wireless-debug 1.2.0"')"
 check "watching: deleting the stop file refused" deny "$(decision 'rm ~/.cache/android-wireless-debug/stop')"
 
 # A stop cuts short a batch that is already running.
@@ -153,6 +157,21 @@ kill $other 2>/dev/null
 watch_ stop; rm -rf "$AWD_STATE_DIR"
 FAKE_PL=/dev/null watch_ start 28; settle
 check "unreachable phone: adb refused"      deny "$(decision "$TAP")"
+
+# Some touchscreens declare KEY_POWER (double-tap-to-wake drivers). They must
+# never be watched: their stream would carry every touch.
+watch_ stop; rm -rf "$AWD_STATE_DIR"; : > "$FAKE_LOG"
+sed 's/KEY_WAKEUP/KEY_POWER /' "$FIX/getevent-pl.txt" > "$TMP/touch-power.txt"
+FAKE_PL=$TMP/touch-power.txt FAKE_HOLD=1 watch_ start 28; settle
+check "touchscreen with KEY_POWER not watched" none "$(grep 'getevent -lt' "$FAKE_LOG" | grep -oE 'event[78]' | head -1 | grep . || echo none)"
+check "button devices still watched"        yes  "$(grep 'getevent -lt' "$FAKE_LOG" | grep -q 'event3' && echo yes)"
+
+# One watcher per state dir: stopping one leaves another session's alone.
+start; other_state=$TMP/other-state
+AWD_STATE_DIR=$other_state FAKE_HOLD=1 watch_ start 28; settle
+watch_ stop; settle 0.3
+check "stop spares another state dir's watcher" yes "$(AWD_STATE_DIR=$other_state bash "$SCRIPTS/stop_watch.sh" status 2>&1 | grep -q '^watching' && echo yes)"
+AWD_STATE_DIR=$other_state watch_ stop
 
 # Lifecycle: status, resume, reconnect, stop.
 start "$FIX/power.txt"
