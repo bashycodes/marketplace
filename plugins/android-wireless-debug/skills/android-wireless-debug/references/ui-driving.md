@@ -124,6 +124,9 @@ no host round-trip in between:
 $D shell 'input tap 1006 1299; sleep 0.6; input tap 207 1102; sleep 0.5; input tap 1006 1299; sleep 0.6; input tap 207 1102'
 ```
 
+Keep each batch short, about 3 seconds at most. The user's stop gesture (see
+SKILL.md) is only checked between commands, so a long batch would make them wait.
+
 If you are testing a debounce, de-dup or rate-limit window, always measure the
 actual gap from the receiving end (payload timestamps, server logs) rather than
 assuming your taps were as fast as they felt.

@@ -82,6 +82,9 @@ report() {
   echo
   echo "screenshot:  $D exec-out screencap -p > shot.png"
   echo "disconnect:  adb disconnect $addr      # leaves the port open on the phone"
+  echo
+  # The user's way to take the phone back; adb is refused until this runs.
+  bash "$(dirname "$0")/stop_watch.sh" start "$tid" 2>&1 | sed 's/^/stop gesture: /'
 }
 
 # --- step 1: the persistent port ---------------------------------------------

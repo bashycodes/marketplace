@@ -1,0 +1,18 @@
+add device 7: /dev/input/event4
+add device 11: /dev/input/event0
+[   57659.259085] /dev/input/event0: EV_KEY       KEY_VOLUMEUP         DOWN                
+[   57659.259085] /dev/input/event0: EV_SYN       SYN_REPORT           00000000            
+[   57659.390999] /dev/input/event0: EV_KEY       KEY_VOLUMEUP         UP                  
+[   57659.390999] /dev/input/event0: EV_SYN       SYN_REPORT           00000000            
+[   57659.696044] /dev/input/event4: EV_KEY       KEY_VOLUMEDOWN       DOWN                
+[   57659.696044] /dev/input/event4: EV_SYN       SYN_REPORT           00000000            
+[   57659.833734] /dev/input/event4: EV_KEY       KEY_VOLUMEDOWN       UP                  
+[   57659.833734] /dev/input/event4: EV_SYN       SYN_REPORT           00000000            
+[   57660.154471] /dev/input/event0: EV_KEY       KEY_VOLUMEUP         DOWN                
+[   57660.154471] /dev/input/event0: EV_SYN       SYN_REPORT           00000000            
+[   57660.279572] /dev/input/event0: EV_KEY       KEY_VOLUMEUP         UP                  
+[   57660.279572] /dev/input/event0: EV_SYN       SYN_REPORT           00000000            
+[   57660.642161] /dev/input/event4: EV_KEY       KEY_VOLUMEDOWN       DOWN                
+[   57660.642161] /dev/input/event4: EV_SYN       SYN_REPORT           00000000            
+[   57660.796781] /dev/input/event4: EV_KEY       KEY_VOLUMEDOWN       UP                  
+[   57660.796781] /dev/input/event4: EV_SYN       SYN_REPORT           00000000            

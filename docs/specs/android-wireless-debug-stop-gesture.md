@@ -27,7 +27,7 @@ Tested on a Galaxy S25 (Android 16):
 7. As a phone owner, I want Claude to tell me which gesture stopped it and when, so that I can tell a deliberate stop from an accidental one.
 8. As a phone owner, I want to resume by telling Claude to continue, so that a stop is never permanent.
 9. As a phone owner, I want gestures made before the session started to be ignored, so that a volume sequence from five minutes earlier doesn't stop a new session.
-10. As a phone owner, I want a stop left over from a previous session to be cleared when a new session connects, so that a new session doesn't start stopped.
+10. As a phone owner, I want my stop to survive Claude reconnecting, so that Claude can't get round it by running the connect script; only a lost-connection stop is cleared on reconnect.
 11. As a phone owner, I want Claude to stop if it can no longer watch the buttons, so that a dropped watcher never leaves Claude in control unwatched.
 12. As a phone owner, I want Claude to stay stopped after my computer reboots until a new session reconnects, so that a reboot that wipes the stop state doesn't silently hand control back.
 13. As a phone owner, I want Claude to tell me the stop gesture whenever it starts controlling my phone, so that I know how to stop it before I need to.
@@ -47,13 +47,13 @@ Tested on a Galaxy S25 (Android 16):
 - **Stop watcher (new script in the skill).** It runs in the background on this machine and does three things:
   - Finds the devices that report `KEY_POWER`, `KEY_VOLUMEUP` and `KEY_VOLUMEDOWN` by name, using the device list from `getevent -pl`.
   - Kills any watcher left over from an earlier session.
-  - Streams `getevent -lt` from only those devices.
+  - Streams `getevent -lt` from only those devices: one `getevent` per device, since it accepts a single device, all inside one `adb shell -tt`. The terminal makes `getevent` write each event at once; through a pipe it holds about 4 KB back, swallowing a whole gesture. It also makes the phone end the `getevent` processes when the stream is killed.
 - **Gesture rules:**
   - Any `KEY_POWER DOWN` triggers a stop.
   - Four volume key-downs in the order UP, DOWN, UP, DOWN, spanning no more than about 3 s, also trigger a stop.
   - Any other key-down resets the volume sequence.
   - A single volume press never triggers.
-- **Only live events count.** `getevent` reads `/dev/input` live and has no history, so earlier presses can't appear. As a backup, the watcher records the phone's `/proc/uptime` at start and ignores any line with an earlier timestamp.
+- **Only live events count.** `getevent` reads `/dev/input` live and has no history, so earlier presses can't appear. There is no uptime cut-off: `/proc/uptime` counts deep sleep and event timestamps don't, so on a real phone uptime runs hours ahead (S25: 83567 vs ~60499) and a cut-off would discard every press.
 - **Stop state:**
   - A stop is a single file per machine, not per device: the hook can't tell which phone a command targets (commands use transport ids such as `adb -t 28`, not serials), so a stop blocks all adb.
   - It records the reason (`power`, `volume-sequence`, `watcher-down`) and the wall-clock time.
@@ -74,7 +74,7 @@ Tested on a Galaxy S25 (Android 16):
   - Also refused: commands that delete the stop file directly.
 - **Interface: watcher commands.** `start <transport>`, `status`, `resume`, `stop`.
 - **Lifecycle changes in the connect script:**
-  - Clears any stale stop file for the device.
+  - Clears a `watcher-down` stop. A user's stop is kept; only `resume` clears it.
   - Starts the watcher after a successful connection.
   - Prints the stop gesture next to the existing screenshot and disconnect hints.
 - **Skill text changes:**
@@ -100,10 +100,12 @@ Tested on a Galaxy S25 (Android 16):
   - touchscreen events are ignored
   - a stream ending writes `watcher-down`
   - no watcher running (no pid file, or a stale pid) refuses adb
-  - events timestamped before the start are ignored
+  - presses still count when `/proc/uptime` is far ahead of event timestamps
+  - an unreachable phone during start (empty device list) refuses adb, rather than being taken for "no buttons"
   - the stop survives later events
   - `resume` clears it
-  - connect clears a stale stop
+  - reconnect keeps a user's stop but clears `watcher-down`
+  - a stop kills an in-flight batch but not the watcher
   - the hook allows the connect script and the watcher commands while stopped
   - the hook refuses `rm` of the stop file
   - non-`adb` commands are never blocked

@@ -114,6 +114,40 @@ If a later command fails with `no device with transport id 'N'`, the transport
 dropped — the phone's port is almost certainly still open. Rerun the script
 (step 1 picks it back up in seconds) and use the new id.
 
+## Letting the user take the phone back
+
+The user can stop you from the phone itself, without reaching the computer:
+
+- **a power-button press**, or
+- **volume up, down, up, down** within 3 seconds (single presses are ignored, so
+  they can still change the volume).
+
+`adb_connect.sh` starts the watcher (`scripts/stop_watch.sh`) and prints the
+gesture. **Tell the user the gesture as soon as you connect**, before you start
+tapping.
+
+Either gesture makes the plugin's PreToolUse hook refuse every adb command, and
+`ui_find.sh`, with a reason naming the press and its time. (adb commands that
+never touch the phone's screen or apps stay allowed: `disconnect`, `devices`,
+`kill-server`, `mdns`, `version`, `usb`.) It also kills adb
+commands already running against that phone. When that happens:
+
+- **Stop.** Tell the user you've stopped and wait. Don't retry, work around the
+  hook, or touch the stop file.
+- **Resume only on an explicit "continue"** from the user:
+  `scripts/stop_watch.sh resume`. Reconnecting does not clear their stop.
+
+The hook also refuses adb while **nothing is watching** for the gesture: before
+`adb_connect.sh` has run, after `stop_watch.sh stop`, or after the watcher lost
+the phone (adb dropped, the phone rebooted). Run `adb_connect.sh` to reconnect;
+it restarts the watcher. A phone with no power or volume input device gets no
+gesture; the script says so, and adb is allowed. Tell the user they can't stop
+you from the phone in that case.
+
+The hook only checks between commands, so **keep each on-device batch short**,
+about 3 seconds at most. The stop state lives in
+`${XDG_RUNTIME_DIR:-$HOME/.cache}/android-wireless-debug/`.
+
 ## Looking at the screen
 
 ```bash
@@ -209,7 +243,8 @@ This is not a lab device. It holds their real messages, photos and accounts.
   clearing app data, changing settings that persist.
 - **Screenshots capture whatever is on screen**, including notifications and
   personal content. Take what the task needs; don't wander through unrelated apps.
-- **Disconnect when you're done** (`adb disconnect <ip:port>`). Pairing survives,
+- **Disconnect when you're done**: `scripts/stop_watch.sh stop`, then
+  `adb disconnect <ip:port>`. Pairing survives,
   so reconnecting later is cheap — there's no reason to sit on a live connection
   to someone's phone.
 - **`adb disconnect` does not close the port.** It drops your end only; a port

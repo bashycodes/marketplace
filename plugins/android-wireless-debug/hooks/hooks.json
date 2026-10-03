@@ -1,0 +1,9 @@
+{
+  "description": "Refuse adb commands while the user's stop gesture (power press, or volume up-down-up-down) is in effect, or while nothing is watching for it.",
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/android-wireless-debug/scripts/stop_hook.sh\"", "timeout": 5 }] }
+    ]
+  }
+}
