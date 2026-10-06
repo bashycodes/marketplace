@@ -85,3 +85,9 @@ test('grill-with-ticktick: ticket mode is documented and plain mode is unchanged
   for (const needle of ['--ticket', 'wayfinding.md', 'Resolve', 'one ticket', '/wayfind-with-ticktick', 'instead of handing', 'Grilling tickets: call the Skill tool', 'do not offer `tt-grill finish`', '`--once` does not apply']) assert.ok(section.includes(needle), `ticket mode lacks: ${needle}`);
   assert.match(body, /timeout: 7200000/);
 });
+
+test('setup-ticktick: optional wayfinding step, no writes for other trackers', () => {
+  const { body } = frontmatter(readFileSync(join(root, 'skills', 'setup-ticktick', 'SKILL.md'), 'utf8'));
+  for (const needle of ['Also wire wayfinder?', '## Wayfinding over TickTick', 'docs/agents/issue-tracker.md', 'local-markdown', 'Grilling tickets: call the Skill tool', 'one list per map', 'Nothing is written for other trackers', 'Clean up']) assert.ok(body.includes(needle), `setup lacks: ${needle}`);
+  assert.ok(body.indexOf('Also wire wayfinder?') < body.indexOf('Clean up'), 'wayfinding step comes before clean-up');
+});

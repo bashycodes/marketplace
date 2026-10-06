@@ -26,4 +26,14 @@ Never accept, display or read a token. The token is typed by the user in **their
    JSON
    ```
    Tell them to open 🔥 Grill inbox on the phone and tick an item, then run `tt-grill wait --effort "setup-test" --owner "<O>" --every 15s --settle 2m --max 10m` in the background. Read the result per `${CLAUDE_PLUGIN_ROOT}/references/ingest.md` and confirm what they ticked.
-5. **Clean up:** `tt-grill finish --effort "setup-test" --owner "<O>"`. Say that `/grill-with-ticktick` is ready.
+5. **Also wire wayfinder?** (optional) Ask the user in the terminal: "Also wire wayfinder?" If no, skip to step 6. If yes: read `docs/agents/issue-tracker.md`. If it is not the local-markdown tracker (no `.scratch/` convention), say so and stop this step. Nothing is written for other trackers. Otherwise append (once; skip if the heading already exists):
+   ```markdown
+   ## Wayfinding over TickTick
+
+   Grilling tickets can be answered from the phone (grill-over-ticktick).
+   - In a map's `## Notes`, add: `Grilling tickets: call the Skill tool with "grill-over-ticktick:grill-with-ticktick" instead of "grilling"; it asks the user on their phone and files the resolution itself.`
+   - Or run `/wayfind-with-ticktick <map>` to work the whole map from the phone, ticket after ticket.
+   - The TickTick effort name is the map's directory name under `.scratch/`; there is one list per map.
+   ```
+   Show the user the diff before saving it.
+6. **Clean up:** `tt-grill finish --effort "setup-test" --owner "<O>"`. Say that `/grill-with-ticktick` is ready.
