@@ -120,7 +120,7 @@ test('push: writes host body first, creates top-level questions one at a time wi
   // each desc links to the next question; the last one back to the host note
   assert.equal(q1.desc, buildDesc({ ...ROUND.questions[0], next: { label: '[2/2] How is it read?', url: taskUrl(listId, q2.id) } }));
   assert.equal(q2.desc, buildDesc({ ...ROUND.questions[1], next: { label: '📍 e', url: taskUrl(listId, hostId) } }));
-  assert.ok(q1.desc.includes(`\n\nNext → [[2/2] How is it read?](https://ticktick.com/webapp/#p/${listId}/tasks/${q2.id})\n\n⌁ r2.1 `));
+  assert.ok(q1.desc.includes(`\n\nNext → [［2/2］ How is it read?](https://ticktick.com/webapp/#p/${listId}/tasks/${q2.id})\n\n⌁ r2.1 `));
   assert.ok(q2.desc.includes(`Next → [📍 e](https://ticktick.com/webapp/#p/${listId}/tasks/${hostId})`));
   assert.deepEqual([parseDesc(q1.desc).key, parseDesc(q1.desc).changed, parseDesc(q1.desc).answerText], ['r2.1', false, '']);
   // created last-first (so the next id exists), returned in key order

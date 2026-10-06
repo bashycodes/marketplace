@@ -49,15 +49,15 @@ export function taskUrl(listId, taskId) {
 }
 
 /**
- * Brackets in the label after our own `[i/N] ` prefix become fullwidth `［］`, so a free-form title
- * cannot close the link text early. Not backslash escapes: TickTick re-escapes punctuation on save
- * and a stored `\]` would no longer hash as it was built. `)` is harmless inside link text.
+ * Every `[` / `]` in the label becomes fullwidth `［］`, including our own `[i/N] ` prefix: the TickTick
+ * app does not parse a link whose text contains an ASCII bracket (`[[2/6] t](url)` stays plain text),
+ * while a bracket-free label becomes a task chip that shows the target task's title. Not backslash
+ * escapes: the app keeps the escaped brackets in the label and TickTick re-escapes punctuation on save,
+ * so a stored `\]` would no longer hash as it was built. `)` is harmless inside link text.
  * @param {NextLink} next @returns {string}
  */
 export function nextLine({ label, url }) {
-  const m = TITLE_PREFIX_RE.exec(label);
-  const pre = m ? m[0] : '';
-  const safe = pre + label.slice(pre.length).replace(/\[/g, '［').replace(/\]/g, '］');
+  const safe = label.replace(/\[/g, '［').replace(/\]/g, '］');
   return `${NEXT_PREFIX}[${safe}](${url})`;
 }
 
