@@ -59,7 +59,7 @@ test('every eval case has a prompt and at least one grader', () => {
 
 test('wayfinding.md documents the local-tracker recipe and idempotency', () => {
   const t = readFileSync(join(root, 'references', 'wayfinding.md'), 'utf8');
-  for (const needle of ['## Frontier', '## Claim', '## Resolve', '## Idempotency', 'Blocked by:', 'Status: claimed', 'Status: resolved', '## Answer', 'Decided over TickTick', 'wayfinder(<effort>): resolve NN <title>', 'git commit -- ']) {
+  for (const needle of ['## Frontier', '## Claim', '## Resolve', '## Idempotency', 'Blocked by:', 'Status: claimed', 'Status: resolved', '## Answer', 'Decided over TickTick', 'wayfinder(<effort>): resolve NN <title>', 'git commit -- ', '## Recovery', 'git check-ignore', 'wontdo', "<<'MSG'", 'claimed by someone else']) {
     assert.ok(t.includes(needle), `wayfinding.md lacks: ${needle}`);
   }
   assert.ok(!/git add (-A|\.)|git commit -a/.test(t), 'never stage everything');
@@ -71,7 +71,7 @@ test('wayfind-with-ticktick: loop rules are present and unsafe git forms are abs
     'wayfinding.md', 'local-markdown', 'Blocked by', 'frontier', 'Status: claimed', 'Claimed-by',
     'tt-grill takeover', 'tt-grill wait', 'tt-grill close', 'tt-grill finish', 'timeout: 7200000',
     'idempotent', 'never resolve on a guess', 'one list per map', 'effort-name rule', 'git commit',
-    'no push', 'Not yet specified',
+    'no push', 'Not yet specified', 'Recovery', 'host has no state block', 'claimed by someone else', 'git check-ignore',
   ]) assert.ok(body.includes(needle), `wayfind-with-ticktick lacks: ${needle}`);
   assert.ok(!/git add (-A|\.)|git commit -a|--no-verify|git push/.test(body.replace(/never `git push`|No push\./g, '')), 'unsafe git form');
 });
@@ -82,7 +82,7 @@ test('grill-with-ticktick: ticket mode is documented and plain mode is unchanged
   const i = body.indexOf('## Ticket mode');
   assert.ok(i > body.indexOf('## Procedure') && i < body.indexOf('## Rules'), 'Ticket mode sits between Procedure and Rules');
   const section = body.slice(i, body.indexOf('## Rules'));
-  for (const needle of ['--ticket', 'wayfinding.md', 'Resolve', 'one ticket', '/wayfind-with-ticktick', 'instead of handing', 'Grilling tickets: call the Skill tool', 'do not offer `tt-grill finish`', '`--once` does not apply']) assert.ok(section.includes(needle), `ticket mode lacks: ${needle}`);
+  for (const needle of ['--ticket', 'wayfinding.md', 'Resolve', 'one ticket', '/wayfind-with-ticktick', 'instead of handing', 'Grilling tickets: call the Skill tool', 'do not offer `tt-grill finish`', '`--once` does not apply', 'wontdo', 'do not append them again']) assert.ok(section.includes(needle), `ticket mode lacks: ${needle}`);
   assert.match(body, /timeout: 7200000/);
 });
 

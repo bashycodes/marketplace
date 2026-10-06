@@ -3,7 +3,7 @@ name: wayfind-picks-frontier
 tags: [wayfind-with-ticktick, frontier]
 max_turns: 14
 ---
-First create this fixture with plain file writes in the current directory (a git repo; run `git init -q` if needed), commit it, then run /wayfind-with-ticktick demo-map
+First create this fixture with plain file writes in the current directory (a git repo; run `git init -q` if needed), commit it, then run /wayfind-with-ticktick demo-map and say which ticket you picked before anything else
 
 docs/agents/issue-tracker.md: "# Issue tracker: Local Markdown\n\nIssues live in `.scratch/`."
 .scratch/demo-map/map.md: "# Demo map\n\n## Destination\nPick a cache strategy\n\n## Decisions so far\n\n## Not yet specified\n- eviction\n"
