@@ -36,7 +36,7 @@ When nothing can be picked, report what remains and why: blocked / non-grilling 
 
 ## Recovery
 
-`Status: resolved` is written before the commit, so a failed commit or a crash leaves a resolved ticket that the frontier skips. Before picking a frontier ticket, look for a ticket whose file has `## Answer` and `Status: resolved` and where either `git status --porcelain -- "<ticket path>" "<map path>"` shows uncommitted changes or `map.md` lacks its Decisions line. For such a ticket finish only the missing Resolve steps (Idempotency decides which; do not re-grill), then continue.
+`Status: resolved` is written before the commit, so a failed commit or a crash leaves a resolved ticket that the frontier skips. Before picking a frontier ticket, look for a ticket whose file has `## Answer` and `Status: resolved` AND either (a) `git status --porcelain -- "<ticket path>"` shows uncommitted changes, or (b) `map.md`'s Decisions so far has no line linking `issues/NN-<slug>.md`. Uncommitted edits to `map.md` alone do not trigger Recovery: they may be hand edits or another session's. For such a ticket finish only the missing Resolve steps (Idempotency decides which; do not re-grill), then continue. The `close` step (step 4, and thus `takeover`) runs in Recovery only when it finds un-ingested remaining questions of the ticket to retire or the card's Decided lacks the gist; otherwise skip it.
 
 ## Claim
 
@@ -66,7 +66,7 @@ Do the four steps in order; each is skipped when its effect is already present (
    MSG
    ```
    Title and gist are data from the user/phone: never interpolate them into a double-quoted shell string. Staged changes to other files stay out (the `git commit -- <paths>` form limits the commit to those paths), but the whole of each file is committed, so unrelated staged or unstaged edits to `map.md` are swept into this commit. Never stage everything and never use the commit-all flag. If git fails (hooks, signing, identity), leave the files written, show git's error verbatim and stop; do not retry with `--no-verify` or `--no-gpg-sign` unless the user says so.
-4. Host-only `tt-grill close`: run a fresh `tt-grill pull --effort "<E>"` and put this ticket's remaining questions with `ingested: false` (their context starts with `Ticket NN · <title>`) into `wontdo` (superseded by the filed resolution); `answered`, `reopen`, `drop` empty; `host.decided` extended by the gist and `host.open` empty, so the TickTick card mirrors the map:
+4. Host-only `tt-grill close`: run a fresh `tt-grill pull --effort "<E>"`. If any remaining `ingested: false` question of this ticket has an answer signal other than `none`, surface it first (one line: "answered on the phone after the last ingest: <key>") and ask whether it changes the resolution, instead of silently retiring it. Then put this ticket's remaining questions with `ingested: false` (their context starts with `Ticket NN · <title>`) into `wontdo` (superseded by the filed resolution); `answered`, `reopen`, `drop` empty; `host.decided` extended by the gist and `host.open` empty, so the TickTick card mirrors the map:
    ```bash
    tt-grill close --effort "<E>" --owner "<O>" <<'JSON'
    {"answered":[],"wontdo":["r3.2"],"reopen":[],"drop":[],"host":{"goal":"<goal>","decided":["<...prior>","<filed gist>"],"open":[],"notAsked":[]}}

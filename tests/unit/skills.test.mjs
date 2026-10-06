@@ -59,7 +59,7 @@ test('every eval case has a prompt and at least one grader', () => {
 
 test('wayfinding.md documents the local-tracker recipe and idempotency', () => {
   const t = readFileSync(join(root, 'references', 'wayfinding.md'), 'utf8');
-  for (const needle of ['## Frontier', '## Claim', '## Resolve', '## Idempotency', 'Blocked by:', 'Status: claimed', 'Status: resolved', '## Answer', 'Decided over TickTick', 'wayfinder(<effort>): resolve NN <title>', 'git commit -- ', '## Recovery', 'git check-ignore', 'wontdo', "<<'MSG'", 'claimed by someone else']) {
+  for (const needle of ['## Frontier', '## Claim', '## Resolve', '## Idempotency', 'Blocked by:', 'Status: claimed', 'Status: resolved', '## Answer', 'Decided over TickTick', 'wayfinder(<effort>): resolve NN <title>', 'git commit -- ', '## Recovery', 'git check-ignore', 'wontdo', "<<'MSG'", 'claimed by someone else', 'Uncommitted edits to `map.md` alone']) {
     assert.ok(t.includes(needle), `wayfinding.md lacks: ${needle}`);
   }
   assert.ok(!/git add (-A|\.)|git commit -a/.test(t), 'never stage everything');
@@ -72,6 +72,7 @@ test('wayfind-with-ticktick: loop rules are present and unsafe git forms are abs
     'tt-grill takeover', 'tt-grill wait', 'tt-grill close', 'tt-grill finish', 'timeout: 7200000',
     'idempotent', 'never resolve on a guess', 'one list per map', 'effort-name rule', 'git commit',
     'no push', 'Not yet specified', 'Recovery', 'host has no state block', 'claimed by someone else', 'git check-ignore',
+    'say which ticket', 'Uncommitted edits to `map.md` alone',
   ]) assert.ok(body.includes(needle), `wayfind-with-ticktick lacks: ${needle}`);
   assert.ok(!/git add (-A|\.)|git commit -a|--no-verify|git push/.test(body.replace(/never `git push`|No push\./g, '')), 'unsafe git form');
 });
