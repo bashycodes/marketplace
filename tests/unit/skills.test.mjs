@@ -6,7 +6,8 @@ import { dirname, join } from 'node:path';
 import { COMMANDS } from '../../plugins/grill-over-ticktick/lib/cli.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'plugins', 'grill-over-ticktick');
-/** Per-skill expectations. manual = disable-model-invocation must be true. */
+/** Per-skill expectations. manual = disable-model-invocation must be true.
+ * @type {Record<string, {allowedTools: string, manual: boolean}>} */
 const EXPECT = {
   'grill-with-ticktick': { allowedTools: 'Bash(tt-grill *)', manual: false },
   'grill-from-ticktick': { allowedTools: 'Bash(tt-grill *)', manual: false },
@@ -62,4 +63,15 @@ test('wayfinding.md documents the local-tracker recipe and idempotency', () => {
     assert.ok(t.includes(needle), `wayfinding.md lacks: ${needle}`);
   }
   assert.ok(!/git add (-A|\.)|git commit -a/.test(t), 'never stage everything');
+});
+
+test('wayfind-with-ticktick: loop rules are present and unsafe git forms are absent', () => {
+  const { body } = frontmatter(readFileSync(join(root, 'skills', 'wayfind-with-ticktick', 'SKILL.md'), 'utf8'));
+  for (const needle of [
+    'wayfinding.md', 'local-markdown', 'Blocked by', 'frontier', 'Status: claimed', 'Claimed-by',
+    'tt-grill takeover', 'tt-grill wait', 'tt-grill close', 'tt-grill finish', 'timeout: 7200000',
+    'idempotent', 'never resolve on a guess', 'one list per map', 'effort-name rule', 'git commit',
+    'no push', 'Not yet specified',
+  ]) assert.ok(body.includes(needle), `wayfind-with-ticktick lacks: ${needle}`);
+  assert.ok(!/git add (-A|\.)|git commit -a|--no-verify|git push/.test(body.replace(/never `git push`|No push\./g, '')), 'unsafe git form');
 });

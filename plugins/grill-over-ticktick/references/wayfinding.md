@@ -57,7 +57,7 @@ Do the four steps in order; each is skipped when its effect is already present (
 | `## Answer` written | ticket file has an `## Answer` heading | do not append a second one |
 | `Status: resolved` | line says `resolved` | leave it |
 | Decisions line | `map.md` already links `issues/NN-<slug>.md` under Decisions so far | do not append |
-| Commit | `git log -1 --format=%H -- <ticket path>` is newer than the `## Answer` edit, i.e. `git status --porcelain -- <the two paths>` is empty | do not commit |
+| Commit | `git status --porcelain -- <the two paths>` prints nothing | do not commit |
 | `close` | `tt-grill pull` shows the question keys with `ingested: true` | skip |
 
 Re-running after a crash therefore only does what is missing.
