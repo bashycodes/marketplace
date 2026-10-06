@@ -82,6 +82,6 @@ test('grill-with-ticktick: ticket mode is documented and plain mode is unchanged
   const i = body.indexOf('## Ticket mode');
   assert.ok(i > body.indexOf('## Procedure') && i < body.indexOf('## Rules'), 'Ticket mode sits between Procedure and Rules');
   const section = body.slice(i, body.indexOf('## Rules'));
-  for (const needle of ['--ticket', 'wayfinding.md', 'Resolve', 'one ticket', '/wayfind-with-ticktick', 'instead of handing', 'Grilling tickets: call the Skill tool']) assert.ok(section.includes(needle), `ticket mode lacks: ${needle}`);
+  for (const needle of ['--ticket', 'wayfinding.md', 'Resolve', 'one ticket', '/wayfind-with-ticktick', 'instead of handing', 'Grilling tickets: call the Skill tool', 'do not offer `tt-grill finish`', '`--once` does not apply']) assert.ok(section.includes(needle), `ticket mode lacks: ${needle}`);
   assert.match(body, /timeout: 7200000/);
 });
