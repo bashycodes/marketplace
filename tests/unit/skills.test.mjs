@@ -75,3 +75,13 @@ test('wayfind-with-ticktick: loop rules are present and unsafe git forms are abs
   ]) assert.ok(body.includes(needle), `wayfind-with-ticktick lacks: ${needle}`);
   assert.ok(!/git add (-A|\.)|git commit -a|--no-verify|git push/.test(body.replace(/never `git push`|No push\./g, '')), 'unsafe git form');
 });
+
+test('grill-with-ticktick: ticket mode is documented and plain mode is unchanged', () => {
+  const { fm, body } = frontmatter(readFileSync(join(root, 'skills', 'grill-with-ticktick', 'SKILL.md'), 'utf8'));
+  assert.match(fm['argument-hint'], /--ticket/);
+  const i = body.indexOf('## Ticket mode');
+  assert.ok(i > body.indexOf('## Procedure') && i < body.indexOf('## Rules'), 'Ticket mode sits between Procedure and Rules');
+  const section = body.slice(i, body.indexOf('## Rules'));
+  for (const needle of ['--ticket', 'wayfinding.md', 'Resolve', 'one ticket', '/wayfind-with-ticktick', 'instead of handing', 'Grilling tickets: call the Skill tool']) assert.ok(section.includes(needle), `ticket mode lacks: ${needle}`);
+  assert.match(body, /timeout: 7200000/);
+});

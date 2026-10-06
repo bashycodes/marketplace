@@ -1,7 +1,7 @@
 ---
 name: grill-with-ticktick
 description: Relay a grilling round (Matt Pocock's /grill-me) to TickTick so the user answers from their phone, wait at zero token cost, ingest the answers and keep grilling. Use when the user says "grill me over ticktick", "send the questions to my phone", "I'll answer later on my phone", or invokes /grill-with-ticktick.
-argument-hint: "[effort] [--once]"
+argument-hint: "[effort] [--once] [--ticket <path>]"
 allowed-tools: Bash(tt-grill *)
 ---
 
@@ -44,6 +44,23 @@ You run the interview of the `mattpocock-skills:grilling` skill (load it with th
    - exit 4 → nothing (or not everything) answered within the limit; report `answered`/`total` from stderr and offer to re-run this skill later.
    - exit 5 / 6 → per `round-schema.md`.
 8. **If the user types anything while the wait is running:** stop the background task with TaskStop (a deferred tool: load it first with ToolSearch, query `select:TaskStop`) and continue in the terminal: follow `${CLAUDE_PLUGIN_ROOT}/skills/grill-from-ticktick/SKILL.md` from its **step 3** (do not take over again — you already own the effort).
+
+## Ticket mode
+
+Active when `$ARGUMENTS` carries `--ticket <path>`, or when a `/wayfinder` session is resolving a grilling ticket and calls this skill for it (the map's `## Notes` names it). It changes four things; everything else is plain mode.
+
+- **Effort and prose:** the effort is the map's directory name (`.scratch/<effort>/`), not `<repo>-<topic>`; host prose and question context follow "Map fields for the TickTick card" in `${CLAUDE_PLUGIN_ROOT}/references/wayfinding.md`. The goal is the ticket's `## Question`.
+- **Terminal question:** ask once, in the terminal, "answer here or in TickTick?"; the effort name is not asked (step 1 is skipped).
+- **Filing:** when the ticket's question converges, run the Resolve steps in `wayfinding.md` (answer, map line, one commit, `close`, all idempotent; the `close` there is host-only, with empty key lists and `host.decided` extended with the filed gist) **instead of handing the resolution back** to wayfinder. Then tell the wayfinder session: "resolved and committed; wayfinder's own wrap-up (new tickets, fog) is yours". Never `git push`. `allowed-tools` stays `Bash(tt-grill *)`, so filing's git calls rely on the invoking turn: if `git` is not pre-approved in this session the harness will ask the user once.
+- **One ticket:** work exactly one ticket and never claim another. One ticket per `/wayfinder` session is wayfinder's rule; `/wayfind-with-ticktick` runs the multi-ticket loop.
+
+The `## Notes` line `/setup-ticktick` offers to put in a map:
+
+```
+Grilling tickets: call the Skill tool with "grill-over-ticktick:grill-with-ticktick" instead of "grilling"; it asks the user on their phone and files the resolution itself.
+```
+
+Typing in the terminal still switches to terminal mode (step 8); the ticket is then filed the same way when it converges.
 
 ## Rules
 - The decisions are the user's. Never answer a question for them, never treat ⭐ as accepted, never invent an answer for a `none` / `other-only` question.
