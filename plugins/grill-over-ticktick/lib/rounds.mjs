@@ -14,7 +14,7 @@ import { usage, notFound, takenOver, serverId, asArray } from './errors.mjs';
 /* `unknown`: in the pushlog but absent from a truncated filter (≥ 200 tasks) — it may still exist; leave it alone. */
 /** @typedef {ReturnType<typeof classifyItems>} Items */
 /** @typedef {{ key: string, taskId: string, etag: string | null, status: number | null, title: string | null, position: number | null, total: number | null, items: Items, desc: string | null, descChanged: boolean, answerText: string | null, signal: Signal, ingested: boolean }} PulledQuestion */
-/* `title`: as stored (with the `[i/N] ` prefix push adds); `position`/`total`: parsed from that prefix, null when absent (older tasks). */
+/* `title`: as stored (with the `(i/N) ` prefix push adds); `position`/`total`: parsed from that prefix, null when absent (older tasks). */
 /* `ingested`: the pushlog has an `ingested <key>` line, i.e. a previous `close` set this question to answered (2) or won't-do (−1). False when unknown. */
 /** @typedef {{ host: { id: string, etag: string | null, owner: string | null, gen: number, round: number, body: string, prose: string, hasBlock: boolean }, questions: PulledQuestion[], truncated: boolean }} PullResult */
 /** @typedef {{ api: Api, effort: string, pushlogDir: string, log: Logger, random?: () => number, layout?: Layout }} Ctx */
@@ -261,7 +261,7 @@ export async function push(args) {
   // the write is still clobbered (accepted risk per spec).
   await writeHost(args.api, layout, renderHostProse({ effort: args.effort, host: round.host }), next, fresh.trailing);
 
-  // Titles get an `[i/N] ` prefix so a name-sorted list shows the round in order. Each desc links
+  // Titles get an `(i/N) ` prefix so a name-sorted list shows the round in order. Each desc links
   // to the NEXT question (the last one back to the host), so questions are created last-first:
   // the next task's id must exist before its predecessor's desc is written. Existing/adopted
   // questions keep their desc as-is (never rewritten). Questions are top-level tasks in the 📍
