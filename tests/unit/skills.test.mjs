@@ -6,8 +6,15 @@ import { dirname, join } from 'node:path';
 import { COMMANDS } from '../../plugins/grill-over-ticktick/lib/cli.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'plugins', 'grill-over-ticktick');
-const skills = ['grill-with-ticktick', 'grill-from-ticktick', 'setup-ticktick'];
-const refs = ['conventions.md', 'round-schema.md', 'ingest.md', 'acceptance.md'];
+/** Per-skill expectations. manual = disable-model-invocation must be true. */
+const EXPECT = {
+  'grill-with-ticktick': { allowedTools: 'Bash(tt-grill *)', manual: false },
+  'grill-from-ticktick': { allowedTools: 'Bash(tt-grill *)', manual: false },
+  'setup-ticktick': { allowedTools: 'Bash(tt-grill *)', manual: true },
+  'wayfind-with-ticktick': { allowedTools: 'Bash(tt-grill *), Bash(git *)', manual: true },
+};
+const skills = Object.keys(EXPECT);
+const refs = ['conventions.md', 'round-schema.md', 'ingest.md', 'acceptance.md', 'wayfinding.md'];
 
 /** @param {string} text */
 function frontmatter(text) {
@@ -23,12 +30,12 @@ for (const s of skills) {
     const { fm, body } = frontmatter(text);
     assert.equal(fm.name, s);
     assert.ok(fm.description && fm.description.length > 40 && fm.description.length <= 1024);
-    if (s === 'setup-ticktick') assert.equal(fm['disable-model-invocation'], 'true'); else assert.notEqual(fm['disable-model-invocation'], 'true');
+    assert.equal(fm['disable-model-invocation'] === 'true', EXPECT[s].manual, 'disable-model-invocation');
     for (const m of body.matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/references\/([\w.-]+)/g)) assert.ok(existsSync(join(root, 'references', m[1])), `missing reference ${m[1]}`);
     for (const m of body.matchAll(/tt-grill (\w+)/g)) if (!['—', 'is', 'and', 'in', 'on'].includes(m[1])) assert.ok(COMMANDS.includes(m[1]) || m[1] === 'auth', `unknown command tt-grill ${m[1]} in ${s}`);
     assert.ok(!/cat .*token|echo .*token/.test(body), 'skill must never read the token');
     assert.ok(/ingest\.md/.test(body), 'every skill points at the shared ingest procedure');
-    assert.equal(fm['allowed-tools'], 'Bash(tt-grill *)');
+    assert.equal(fm['allowed-tools'], EXPECT[s].allowedTools);
     if (/tt-grill wait/.test(body) && s === 'grill-with-ticktick') assert.match(body, /timeout: 7200000/);
   });
 }
@@ -47,4 +54,12 @@ test('every eval case has a prompt and at least one grader', () => {
     assert.ok(existsSync(join(evals, c, 'prompt.md')), `${c}/prompt.md`);
     assert.ok(readdirSync(join(evals, c, 'graders')).length > 0, `${c}/graders`);
   }
+});
+
+test('wayfinding.md documents the local-tracker recipe and idempotency', () => {
+  const t = readFileSync(join(root, 'references', 'wayfinding.md'), 'utf8');
+  for (const needle of ['## Frontier', '## Claim', '## Resolve', '## Idempotency', 'Blocked by:', 'Status: claimed', 'Status: resolved', '## Answer', 'Decided over TickTick', 'wayfinder(<effort>): resolve NN <title>', 'git commit -- ']) {
+    assert.ok(t.includes(needle), `wayfinding.md lacks: ${needle}`);
+  }
+  assert.ok(!/git add (-A|\.)|git commit -a/.test(t), 'never stage everything');
 });
