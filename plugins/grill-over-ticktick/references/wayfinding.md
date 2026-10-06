@@ -26,7 +26,7 @@ Scan `.scratch/<effort>/issues/` in numeric order. A ticket is on the frontier w
 
 ## Claim
 
-Re-read the file, check it is still unclaimed, then write `Status: claimed` (replace an existing `Status:` line, else insert after `Type:`, else after the title) and a `Claimed-by: tt-grill <owner>` line right after it. Do not commit the claim. If the re-read shows `claimed` by someone else, pick the next frontier ticket.
+Re-read the file, check it is still unclaimed, then write `Status: claimed` (replace an existing `Status:` line, else insert after `Type:`, else after the title) and a `Claimed-by: tt-grill <owner>` line right after it. Do not commit the claim. If the re-read shows `claimed` by someone else, pick the next frontier ticket. A resumable ticket's `Claimed-by:` is rewritten to the new owner; only a claim with no `Claimed-by: tt-grill` line from this machine's earlier runs counts as someone else's.
 
 ## Resolve
 
@@ -48,7 +48,7 @@ Do the four steps in order; each is skipped when its effect is already present (
    git commit -m "wayfinder(<effort>): resolve NN <title>" -m "<gist>" -- .scratch/<effort>/map.md .scratch/<effort>/issues/NN-<slug>.md
    ```
    (the `git commit -- <paths>` form limits the commit to those paths, even when other changes are staged). Never stage everything and never use the commit-all flag. If git fails (hooks, signing, identity), leave the files written, show git's error verbatim and stop; do not retry with `--no-verify` or `--no-gpg-sign` unless the user says so.
-4. `tt-grill close` with `host.decided` extended by the gist, so the TickTick card mirrors the map.
+4. Host-only `tt-grill close` (`answered`, `wontdo`, `reopen`, `drop` empty) with `host.decided` extended by the gist and `host.open` empty, so the TickTick card mirrors the map.
 
 ## Idempotency
 
@@ -58,7 +58,7 @@ Do the four steps in order; each is skipped when its effect is already present (
 | `Status: resolved` | line says `resolved` | leave it |
 | Decisions line | `map.md` already links `issues/NN-<slug>.md` under Decisions so far | do not append |
 | Commit | `git status --porcelain -- <the two paths>` prints nothing | do not commit |
-| `close` | `tt-grill pull` shows the question keys with `ingested: true` | skip |
+| `close` | question keys already `ingested: true` in `tt-grill pull` | skip only the key list; the host-only close is always safe to repeat, never skipped |
 
 Re-running after a crash therefore only does what is missing.
 
