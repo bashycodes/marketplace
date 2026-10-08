@@ -9,6 +9,13 @@ set -uo pipefail
 STATE="${AWD_STATE_DIR:-${XDG_RUNTIME_DIR:-$HOME/.cache}/android-wireless-debug}"
 INPUT=$(cat)
 
+# A process's full command line. `ps -o args=` cuts it at $COLUMNS, and a hook
+# can run with a narrow one; the plugin's install path alone can be wider.
+proc_args() {
+  if [ -r "/proc/$1/cmdline" ]; then tr '\0' ' ' < "/proc/$1/cmdline"
+  else ps -ww -o args= -p "$1" 2>/dev/null; fi
+}
+
 # A field of the hook input: tool_input.command or session_id. Without jq or
 # python3 the command falls back to the whole JSON, which can only over-match
 # (e.g. on the description), never miss.
@@ -82,7 +89,7 @@ fi
 [ -f "$STATE/unavailable" ] && exit 0
 
 pid=$(cat "$STATE/watcher.pid" 2>/dev/null)
-if [ -z "$pid" ] || ! ps -o args= -p "$pid" 2>/dev/null | grep -qF "stop_watch.sh _run $STATE "; then
+if [ -z "$pid" ] || ! proc_args "$pid" | grep -qF "stop_watch.sh _run $STATE "; then
   deny "The stop-gesture watcher is not running, so the user could not stop you from the phone. Connect with adb_connect.sh first; it starts the watcher."
 fi
 exit 0

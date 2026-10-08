@@ -74,6 +74,10 @@ check "a stop keeps its first reason"       yes  "$(bash "$SCRIPTS/stop_watch.sh
 
 start
 check "no presses: adb allowed"          allow "$(decision 'adb -t 28 shell input tap 1 1')"
+# ps truncates args= to $COLUMNS, and the watcher's command line (the long
+# plugin cache path) is wider than a hook's narrow COLUMNS.
+check "narrow COLUMNS: adb allowed"      allow "$(COLUMNS=40 decision "$TAP")"
+check "narrow COLUMNS: status watching"   yes  "$(COLUMNS=40 bash "$SCRIPTS/stop_watch.sh" status 2>&1 | grep -q '^watching' && echo yes)"
 
 start "$FIX/volume-sequence.txt"
 check "volume up-down-up-down stops adb"  deny "$(decision 'adb -t 28 shell input tap 1 1')"

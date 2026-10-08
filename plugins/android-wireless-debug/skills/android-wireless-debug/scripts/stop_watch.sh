@@ -19,6 +19,13 @@ set -uo pipefail
 STATE="${AWD_STATE_DIR:-${XDG_RUNTIME_DIR:-$HOME/.cache}/android-wireless-debug}"
 say() { printf '%s\n' "$*" >&2; }
 
+# A process's full command line. `ps -o args=` cuts it at $COLUMNS, and a hook
+# can run with a narrow one; the plugin's install path alone can be wider.
+proc_args() {
+  if [ -r "/proc/$1/cmdline" ]; then tr '\0' ' ' < "/proc/$1/cmdline"
+  else ps -ww -o args= -p "$1" 2>/dev/null; fi
+}
+
 write_stop() {  # write_stop <reason>
   mkdir -p "$STATE"
   printf 'reason=%s\ntime=%s\n' "$1" "$(date '+%H:%M:%S')" > "$STATE/stop"
@@ -62,9 +69,9 @@ kill_in_flight() {
   # Anchored on the program: adb itself (or a script run as adb), never a
   # process that merely mentions adb in its arguments.
   for pid in $(pgrep -f "^([^ ]+ )?([^ ]*/)?adb(\.exe)? (.* )?-t $tid (shell|exec-out)"); do
-    ps -o args= -p "$pid" 2>/dev/null | grep -q 'getevent -lt' && continue
+    proc_args "$pid" | grep -q 'getevent -lt' && continue
     parent=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
-    if [ -n "$parent" ] && ps -o args= -p "$parent" 2>/dev/null | grep -qE '^([^ ]*/)?(ba|da|z|k)?sh (-[a-z]+ )*-[a-z]*c '; then
+    if [ -n "$parent" ] && proc_args "$parent" | grep -qE '^([^ ]*/)?(ba|da|z|k)?sh (-[a-z]+ )*-[a-z]*c '; then
       kill "$parent" 2>/dev/null
     fi
     kill "$pid" 2>/dev/null
@@ -142,7 +149,7 @@ start() {
 
 # A pid file can outlive its watcher and the pid be reused, so check that the
 # process really is one.
-is_watcher() { ps -o args= -p "$1" 2>/dev/null | grep -qF "stop_watch.sh _run $STATE "; }
+is_watcher() { proc_args "$1" | grep -qF "stop_watch.sh _run $STATE "; }
 
 kill_tree() {  # without setsid there is no group to kill: children first
   local child
@@ -162,7 +169,7 @@ stop() {
   # its process-substitution subshell, still running the adb stream. Sweep up
   # this state dir's leftovers by command line, and only this state dir's.
   for pid in $(pgrep -f 'stop_watch\.sh _run '); do
-    ps -o args= -p "$pid" 2>/dev/null | grep -qF "stop_watch.sh _run $STATE " && kill_tree "$pid"
+    proc_args "$pid" | grep -qF "stop_watch.sh _run $STATE " && kill_tree "$pid"
   done
   return 0
 }
