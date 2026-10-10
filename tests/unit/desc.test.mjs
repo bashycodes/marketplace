@@ -104,11 +104,11 @@ test('normalise strips TickTick-style backslash escapes around markdown punctuat
   assert.equal(normalise('a \\(b\\) \\*c\\*'), 'a (b) *c*');
 });
 
-const NEXT = { label: '[2/3] Which columns does a phase-2 map list get?', url: taskUrl('p1', 't9') };
+const NEXT = { label: '(2/3) Which columns does a phase-2 map list get?', url: taskUrl('p1', 't9') };
 
 test('buildDesc with next: link line sits between the marker and the footer, covered by the hash', () => {
   const d = buildDesc({ ...Q, next: NEXT });
-  const body = 'Where does the token live?\nTwo options matter.\n\n⭐ Recommended: ~/.config/tt-grill/token — survives uninstall\n\n✍️ Answer:\n\nNext → [[2/3] Which columns does a phase-2 map list get?](https://ticktick.com/webapp/#p/p1/tasks/t9)';
+  const body = 'Where does the token live?\nTwo options matter.\n\n⭐ Recommended: ~/.config/tt-grill/token — survives uninstall\n\n✍️ Answer:\n\nNext → [(2/3) Which columns does a phase-2 map list get?](https://ticktick.com/webapp/#p/p1/tasks/t9)';
   assert.equal(d, `${body}\n\n⌁ r2.1 ${hashText(body)}`);
   assert.deepEqual([parseDesc(d).changed, parseDesc(d).answerText, parseDesc(d).key], [false, '', 'r2.1']);
   assert.equal(parseDesc(d.replace('t9)', 't8)')).changed, true);   // editing the link is an edit
@@ -130,9 +130,12 @@ test('Next link survives TickTick markdown escaping: not an edit, answerText emp
 });
 
 test('prefixTitle / parseTitlePrefix', () => {
-  assert.equal(prefixTitle('Which columns?', 2, 3), '[2/3] Which columns?');
-  assert.deepEqual(parseTitlePrefix('[2/3] Which columns?'), { position: 2, total: 3 });
-  assert.deepEqual(parseTitlePrefix('\\[12/30\\] x'), { position: 12, total: 30 });
+  assert.equal(prefixTitle('Which columns?', 2, 3), '(2/3) Which columns?');
+  assert.deepEqual(parseTitlePrefix('(2/3) Which columns?'), { position: 2, total: 3 });
+  assert.deepEqual(parseTitlePrefix('\\[12/30\\] x'), { position: 12, total: 30 });   // 1.0.x titles, server-escaped
+  assert.deepEqual(parseTitlePrefix('[4/9] x'), { position: 4, total: 9 });
+  assert.deepEqual(parseTitlePrefix('\\(12/30\\) x'), { position: 12, total: 30 });
+  assert.equal(prefixTitle('t', 1, 2).includes('['), false, 'a bracket in the title breaks task chips in the Android app');
   assert.deepEqual(parseTitlePrefix('Which columns?'), { position: null, total: null });
   assert.deepEqual(parseTitlePrefix(null), { position: null, total: null });
 });
@@ -155,9 +158,9 @@ test('classifyItems tolerates a missing/null title', () => {
   ]);
 });
 
-test('Next label: brackets after the [i/N] prefix go fullwidth; the link parses and hashes unchanged, even escaped', () => {
-  const next = { label: '[1/2] foo]bar [x] (y)', url: taskUrl('p1', 't2') };
-  assert.equal(nextLine(next), `Next → [[1/2] foo］bar ［x］ (y)](${next.url})`);
+test('Next label: free-form brackets go fullwidth; hashes unchanged, even escaped', () => {
+  const next = { label: '(1/2) foo]bar [x] (y)', url: taskUrl('p1', 't2') };
+  assert.equal(nextLine(next), `Next → [(1/2) foo］bar ［x］ (y)](${next.url})`);
   const d = buildDesc({ ...Q, next });
   const p = parseDesc(d);
   assert.equal(p.changed, false); assert.equal(p.answerText, '');

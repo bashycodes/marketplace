@@ -26,7 +26,7 @@ All commands print one JSON value on stdout and `{"error":"<code>","message":"�
   ]
 }
 ```
-Rules: `context` is 1–3 lines (wayfinding adds a leading `Ticket NN · <title>` line on top, see `wayfinding.md`); `effort` must equal `--effort` and satisfy the effort-name rule (`conventions.md`); `round` ≥ 1; `key` matches `^r\d+\.\d+$`, starts with `r<round>.` (e.g. `r2.1` in round 2) and is unique; `title` ≤ 80 chars, without the `[i/N] ` prefix (`push` adds it); `rec.label` ∈ `options`; `options` must be non-empty with no empty strings and no duplicates, and no option may start with the recommended-item prefix `⭐ ` or equal the reserved item `Other → type after ✍️` — the CLI adds the `⭐ ` prefix to `rec.label` and appends the Other item itself, so never include either in `options`. `push` against an effort that was never taken over (`takeover`) exits 6 (not found) — it never creates the layout. `host.*` is the prose for the host note; keep `open` entries as `r2.1 <title> — ⭐ <rec label>`.
+Rules: `context` is 1–3 lines (wayfinding adds a leading `Ticket NN · <title>` line on top, see `wayfinding.md`); `effort` must equal `--effort` and satisfy the effort-name rule (`conventions.md`); `round` ≥ 1; `key` matches `^r\d+\.\d+$`, starts with `r<round>.` (e.g. `r2.1` in round 2) and is unique; `title` ≤ 80 chars, without the `(i/N) ` prefix (`push` adds it); `rec.label` ∈ `options`; `options` must be non-empty with no empty strings and no duplicates, and no option may start with the recommended-item prefix `⭐ ` or equal the reserved item `Other → type after ✍️` — the CLI adds the `⭐ ` prefix to `rec.label` and appends the Other item itself, so never include either in `options`. `push` against an effort that was never taken over (`takeover`) exits 6 (not found) — it never creates the layout. `host.*` is the prose for the host note; keep `open` entries as `r2.1 <title> — ⭐ <rec label>`.
 
 Round guards (exit 2, before any write): `round` lower than the host's `round` is refused (`round N is behind the host (round M)`); a `round` higher than the host's may not reuse a key that already exists in TickTick (pushlog or a question's footer) — a new round must use new keys. Re-pushing the host's current round is the idempotent case.
 
@@ -35,7 +35,7 @@ Output: `{listId, hostId, owner, gen, round, questions:[{key, taskId, created}]}
 ## `pull` output
 ```json
 { "host": { "id": "…", "etag": "…", "owner": "o_…", "gen": 3, "round": 2, "body": "…", "prose": "…", "hasBlock": true },
-  "questions": [ { "key": "r2.1", "taskId": "…", "etag": "…", "status": 0, "title": "[1/3] …", "position": 1, "total": 3,
+  "questions": [ { "key": "r2.1", "taskId": "…", "etag": "…", "status": 0, "title": "(1/3) …", "position": 1, "total": 3,
       "items": [ { "title": "⭐ …", "ticked": true, "isRec": true, "isOther": false } ],
       "desc": "…", "descChanged": false, "answerText": "", "signal": "tick", "ingested": false } ],
   "truncated": false }
@@ -44,7 +44,7 @@ The host is read from `GET /project/{listId}/data` (as `wait` does on every poll
 
 `signal` ∈ `none | tick | text | tick+text | other-only | done | wontdo | missing | unknown` (mechanical; see `ingest.md` for meaning). `unknown` appears only with `truncated:true`: the question is in the pushlog but the capped filter did not return it, so it may still exist — it is neither final nor touched for `wait`, and `close` skips it. Questions are sorted by key and include earlier rounds.
 
-`title` is the stored title as-is, including the `[i/N] ` prefix `push` adds; `position`/`total` are `i`/`N` parsed from it, `null` when the title has no prefix (a task pushed before the prefix existed, or a title edited on the phone) and for `missing`/`unknown` questions. `answerText` is the text after `✍️ Answer:` up to the `Next →` link line (never including it); `null` when the marker is gone.
+`title` is the stored title as-is, including the `(i/N) ` prefix `push` adds; `position`/`total` are `i`/`N` parsed from it, `null` when the title has no prefix (a task pushed before the prefix existed, or a title edited on the phone) and for `missing`/`unknown` questions. `answerText` is the text after `✍️ Answer:` up to the `Next →` link line (never including it); `null` when the marker is gone.
 
 `ingested` (every question, including `missing` ones): `true` once a previous `close` set this question to answered (`answered` → status 2) or won't-do (`wontdo` → status −1); a later `reopen` of that key clears it again (the next answer counts as new). `drop` sets it for a `missing` question. `false` when unknown. It lives in the local pushlog, so on another machine it reads `false`. A closed question keeps its `tick`/`text` signal, so use `ingested`, not `status`, to tell a consumed answer from a new one.
 

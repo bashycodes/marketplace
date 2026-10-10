@@ -13,8 +13,9 @@ export const NEXT_PREFIX = 'Next → ';
  * @type {'desc' | 'content'}
  */
 export const LINK_FIELD = 'desc';
-/* `[i/N] ` ordering prefix on a question title; tolerate TickTick's markdown escapes. */
-const TITLE_PREFIX_RE = /^\\?\[(\d+)\/(\d+)\\?\] /;
+/* `(i/N) ` ordering prefix on a question title (1.1.0; `[i/N] ` before that); tolerate TickTick's markdown escapes.
+ * Parentheses, not brackets: the Android app does not turn a link into a task chip when the TARGET title holds ASCII brackets. */
+const TITLE_PREFIX_RE = /^(?:\\?\[(\d+)\/(\d+)\\?\]|\\?\((\d+)\/(\d+)\\?\)) /;
 
 /** Backslash-escapes TickTick's server inserts around markdown-special punctuation. */
 const ESCAPE_RE = /\\([\\`*_{}\[\]()#+\-.!|<>~])/g;
@@ -49,27 +50,27 @@ export function taskUrl(listId, taskId) {
 }
 
 /**
- * Brackets in the label after our own `[i/N] ` prefix become fullwidth `［］`, so a free-form title
- * cannot close the link text early. Not backslash escapes: TickTick re-escapes punctuation on save
- * and a stored `\]` would no longer hash as it was built. `)` is harmless inside link text.
+ * The Android app shows a link to a task as a chip with the TARGET's title, but only if neither the link text
+ * nor that title holds an ASCII bracket (`[[2/6] t](url)` and links to a `[2/6] t` task stay plain text), hence
+ * the `(i/N) ` title prefix. Any `[` / `]` a free-form title adds to the label becomes fullwidth `［］`. Not
+ * backslash escapes: the app keeps the escaped brackets in the label and TickTick re-escapes punctuation on save,
+ * so a stored `\]` would no longer hash as it was built. `)` is harmless inside link text.
  * @param {NextLink} next @returns {string}
  */
 export function nextLine({ label, url }) {
-  const m = TITLE_PREFIX_RE.exec(label);
-  const pre = m ? m[0] : '';
-  const safe = pre + label.slice(pre.length).replace(/\[/g, '［').replace(/\]/g, '］');
+  const safe = label.replace(/\[/g, '［').replace(/\]/g, '］');
   return `${NEXT_PREFIX}[${safe}](${url})`;
 }
 
 /** @param {string} title @param {number} position 1-based @param {number} total @returns {string} */
 export function prefixTitle(title, position, total) {
-  return `[${position}/${total}] ${title}`;
+  return `(${position}/${total}) ${title}`;
 }
 
 /** @param {string | null | undefined} title @returns {{ position: number | null, total: number | null }} */
 export function parseTitlePrefix(title) {
   const m = TITLE_PREFIX_RE.exec(title ?? '');
-  return m ? { position: Number(m[1]), total: Number(m[2]) } : { position: null, total: null };
+  return m ? { position: Number(m[1] ?? m[3]), total: Number(m[2] ?? m[4]) } : { position: null, total: null };
 }
 
 /**
