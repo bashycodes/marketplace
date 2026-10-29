@@ -116,7 +116,8 @@ dropped — the phone's port is almost certainly still open. Rerun the script
 
 ## Letting the user take the phone back
 
-The user can stop you from the phone itself, without reaching the computer:
+The user can cancel what you're doing on the phone from the phone itself,
+without reaching the computer:
 
 - **a power-button press**, or
 - **volume up, down, up, down** within 3 seconds (single presses are ignored, so
@@ -126,32 +127,33 @@ The user can stop you from the phone itself, without reaching the computer:
 gesture. **Tell the user the gesture as soon as you connect**, before you start
 tapping.
 
-Either gesture makes the plugin's PreToolUse hook refuse every adb command, and
-`ui_find.sh`, with a reason naming the press and its time. Tools that drive the
-phone without naming adb are refused too: `scrcpy`, `fastboot`, gradle
-`install*`/`connected*` tasks, `flutter run|install|drive|test|attach`,
-`run-android`. (adb commands that never touch the phone's screen or apps stay
-allowed: `disconnect`, `devices`, `kill-server`, `mdns`, `version`, `usb`.)
-
-It also kills the `adb -t <id> shell` and `exec-out` commands already running
+Either gesture kills the `adb -t <id> shell` and `exec-out` commands running
 against that phone, and the `bash -c` script that launched them, so the
 script's later lines never run. Other adb commands (`install`, `-s <serial>`)
-are left to finish. When that happens:
+are left to finish. The plugin's PreToolUse hook then refuses your next phone
+command once (adb, `ui_find.sh`, `scrcpy`, `fastboot`, gradle
+`install*`/`connected*`, `flutter run|install|…`, `run-android`), with a reason
+naming the press and its time. When that happens:
 
-- **Stop.** Tell the user you've stopped and wait. Don't retry, work around the
-  hook, or touch the stop file.
-- **Resume only on an explicit "continue"** from the user:
-  `scripts/stop_watch.sh resume`. Reconnecting does not clear their stop.
+- **Stop the current task.** Tell the user you've stopped and wait for their
+  next message. Don't retry or carry on with the cancelled task.
+- **Nothing stays blocked.** When the user asks for more, just carry on; no
+  "resume" step is needed.
 
-The hook also refuses adb while **nothing is watching** for the gesture: before
+A cancel is a one-off: it is reported once, within a minute of the press, and
+reconnecting drops it.
+
+The hook also refuses phone commands while **no watcher is running**: before
 `adb_connect.sh` has run, after `stop_watch.sh stop`, or after the watcher lost
-the phone (adb dropped, the phone rebooted). Run `adb_connect.sh` to reconnect;
-it restarts the watcher. A phone with no power or volume input device gets no
-gesture; the script says so, and adb is allowed. Tell the user they can't stop
-you from the phone in that case.
+the phone (adb dropped, the phone rebooted). Then rerun `adb_connect.sh`
+yourself, on its own rather than chained with phone commands, without asking
+the user; it restarts the watcher. If it fails, or says it could not start the
+watcher, stop and tell the user instead of retrying. A phone with no power or
+volume input device gets no gesture; the script says so, and phone commands are
+allowed. Tell the user they can't cancel from the phone in that case.
 
-The hook only checks between commands, so **keep each on-device batch short**,
-about 3 seconds at most. The stop state lives in
+A gesture kills only `adb -t <id> shell`/`exec-out` commands; anything else runs
+to completion, so **keep each on-device batch short**, about 3 seconds at most. The watcher's state lives in
 `${XDG_RUNTIME_DIR:-$HOME/.cache}/android-wireless-debug/`.
 
 ## Looking at the screen
