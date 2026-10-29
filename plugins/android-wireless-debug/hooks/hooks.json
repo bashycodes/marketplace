@@ -1,5 +1,5 @@
 {
-  "description": "Refuse adb commands while the user's stop gesture (power press, or volume up-down-up-down) is in effect, or while nothing is watching for it; stop the watcher when the session that connected ends.",
+  "description": "Refuse Claude's next phone command once after the user cancels with the stop gesture (power press, or volume up-down-up-down), so it stops the task; while no watcher is running, refuse phone commands until Claude reconnects; stop the watcher when the session that connected ends.",
   "hooks": {
     "PreToolUse": [
       {

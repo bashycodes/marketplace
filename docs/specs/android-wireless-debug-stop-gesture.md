@@ -1,3 +1,11 @@
+> **1.3.0: the gesture cancels; it no longer locks.**
+> - A gesture kills Claude's running phone commands and writes a `cancel` file (reason, time, epoch; replaced by each later press). The hook refuses the next phone command once, if it comes within 60 s (`AWD_CANCEL_FRESH`), so Claude stops the task and waits for the user. Then nothing is blocked.
+> - Reconnecting deletes a cancel older than that, and any leftover 1.2.x `stop` file; a fresh cancel is kept, since Claude may be reconnecting because the cancel killed its command.
+> - Gone: the lasting `stop` file, `resume`, the `watcher-down` stop, and the hook's refusal to let Claude delete the stop file. A lasting lock was never enforceable (Claude can remove the file), and it kept blocking after one-off cancels and pocket locks.
+> - Kept: while no watcher runs, phone commands are refused; the reason tells Claude to rerun `adb_connect.sh` on its own, without asking, and to stop and tell the user if that fails.
+> - The state dir holds `cancel`, `watcher.pid`, `session` and `unavailable`.
+> - Statements below about a persistent stop, resuming, "first reason wins", a stop surviving reconnect, and the delete guard describe 1.2.x.
+
 ## Problem Statement
 
 When I ask Claude to drive my phone through the android-wireless-debug skill, I can't take the phone back. If I need it, or Claude starts doing the wrong thing, any tap or swipe I make competes with Claude's injected input, and Claude keeps going. My only options are to interrupt Claude from the computer, which may be in another room, or to break the connection by hand. Nothing on the phone tells Claude to stop.

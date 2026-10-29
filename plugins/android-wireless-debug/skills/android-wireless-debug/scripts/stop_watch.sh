@@ -3,16 +3,17 @@
 #
 # Usage:
 #   stop_watch.sh start <transport_id>   # (re)start watching; adb_connect.sh does this
-#   stop_watch.sh status                 # watching | stopped | not running | unavailable
-#   stop_watch.sh resume                 # clear a stop -- only when the user says continue
+#   stop_watch.sh status                 # watching | not running | unavailable
 #   stop_watch.sh stop                   # stop watching, when done with the phone
 #
 # Stop gesture: a power press, or volume up-down-up-down within 3 seconds.
-# Either writes the stop file, which makes the PreToolUse hook (stop_hook.sh)
-# refuse every adb command until `resume`.
+# Either cancels what Claude is doing on the phone: it kills the running phone
+# commands and writes the cancel file, so the PreToolUse hook (stop_hook.sh)
+# refuses the next phone command once, telling Claude why. Nothing stays
+# blocked.
 #
 # Env:
-#   AWD_STATE_DIR  where the stop file lives
+#   AWD_STATE_DIR  where the watcher's state lives
 #                  (default ${XDG_RUNTIME_DIR:-$HOME/.cache}/android-wireless-debug)
 set -uo pipefail
 
@@ -26,9 +27,11 @@ proc_args() {
   else ps -ww -o args= -p "$1" 2>/dev/null; fi
 }
 
-write_stop() {  # write_stop <reason>
+write_cancel() {  # write_cancel <reason>
   mkdir -p "$STATE"
-  printf 'reason=%s\ntime=%s\n' "$1" "$(date '+%H:%M:%S')" > "$STATE/stop"
+  # Written aside, then renamed, so the hook never reads half a file.
+  printf 'reason=%s\ntime=%s\nepoch=%s\n' "$1" "$(date '+%H:%M:%S')" "$(date +%s)" > "$STATE/cancel.new.$$" \
+    && mv -f "$STATE/cancel.new.$$" "$STATE/cancel"
 }
 
 # --- the background watcher ---------------------------------------------------
@@ -92,16 +95,12 @@ run() {  # run <state_dir> <transport_id> <device...>
   # would linger, still reading the phone's buttons.
   trap 'trap "" TERM; kill -TERM -- -$$ 2>/dev/null || kill_tree $$; exit 0' TERM
   while IFS= read -r reason; do
-    [ -f "$STATE/stop" ] && continue
-    write_stop "$reason"
+    write_cancel "$reason"
     kill_in_flight "$tid"
   done < <(adb -t "$tid" shell -tt "$script" </dev/null 2>/dev/null | detect)
   # The stream ended without `stop_watch.sh stop`: adb dropped or the phone
-  # rebooted, so presses can no longer be seen. Fail closed.
-  if [ "$(cat "$STATE/watcher.pid" 2>/dev/null)" = "$$" ]; then
-    [ -f "$STATE/stop" ] || write_stop watcher-down
-    rm -f "$STATE/watcher.pid"
-  fi
+  # rebooted. adb_connect.sh starts a new watcher on reconnect.
+  [ "$(cat "$STATE/watcher.pid" 2>/dev/null)" = "$$" ] && rm -f "$STATE/watcher.pid"
 }
 
 # Event devices that report a power or volume key, from `getevent -pl`.
@@ -122,17 +121,24 @@ start() {
   stop
   mkdir -p "$STATE"
   rm -f "$STATE/unavailable"
-  echo "$tid" > "$STATE/transport"
-  [ "$(sed -n 's/^reason=//p' "$STATE/stop" 2>/dev/null)" = watcher-down ] && rm -f "$STATE/stop"
+  # 1.2.x's lasting stop and transport files are gone for good. A cancel too
+  # old to report is dropped; a fresh one is kept, since Claude may reconnect
+  # because the cancel killed its command, and must still hear of it.
+  rm -f "$STATE/stop" "$STATE/transport"
+  local epoch fresh=${AWD_CANCEL_FRESH:-60}
+  epoch=$(sed -n 's/^epoch=//p' "$STATE/cancel" 2>/dev/null)
+  case "$epoch" in ''|*[!0-9]*) epoch=0 ;; esac
+  case "$fresh" in ''|*[!0-9]*) fresh=60 ;; esac
+  [ $(( $(date +%s) - 10#$epoch )) -le "$fresh" ] || rm -f "$STATE/cancel"
   if ! devs=$(button_devices "$tid"); then
     say "could not list the phone's input devices over transport $tid; not watching."
-    say "adb stays blocked until adb_connect.sh connects and the watcher starts."
+    say "Phone commands stay refused until the watcher runs. Stop and tell the user."
     return 1
   fi
   if [ -z "$devs" ]; then
     : > "$STATE/unavailable"
     say "unavailable: no power or volume input devices found on this phone."
-    say "Tell the user they cannot stop you from the phone this session."
+    say "Tell the user they cannot cancel you from the phone this session."
     return 0
   fi
   # A watcher left on the phone by an earlier session would otherwise linger.
@@ -180,28 +186,16 @@ alive() {
 }
 
 status() {
-  if [ -f "$STATE/stop" ]; then
-    echo "stopped: $(sed -n 's/^reason=//p' "$STATE/stop") at $(sed -n 's/^time=//p' "$STATE/stop")"
-  elif [ -f "$STATE/unavailable" ]; then echo "unavailable: no button devices on this phone"
+  if [ -f "$STATE/unavailable" ]; then echo "unavailable: no button devices on this phone"
   elif alive; then echo "watching"
   else echo "not running"; return 1
   fi
-}
-
-# Clear a stop. If the watcher died meanwhile, restart it on the last transport.
-resume() {
-  rm -f "$STATE/stop"
-  alive && { status; return 0; }
-  local tid
-  tid=$(cat "$STATE/transport" 2>/dev/null) || { say "no previous session: run adb_connect.sh"; return 1; }
-  start "$tid"
 }
 
 case "${1:-}" in
   start)  start "${2:?transport id}" ;;
   stop)   stop ;;
   status) status ;;
-  resume) resume ;;
   _run)   shift; run "$@" ;;
-  *)      sed -n '2,15p' "$0" >&2; exit 2 ;;
+  *)      sed -n '2,17p' "$0" >&2; exit 2 ;;
 esac
