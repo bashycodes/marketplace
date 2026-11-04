@@ -37,6 +37,7 @@ case "\$*" in
                      trap 'kill \$! 2>/dev/null; exit 143' TERM
                      sleep 30 & wait ;;   # a long on-device batch, or an APK upload
   *get-serialno*)    echo 100.1.2.3:54321 ;;
+  *"screencap -p"*)  cat "\$FAKE_PNG" ;;
   *"/proc/uptime"*)  echo "\${FAKE_UPTIME:-57650.00} 1000.00" ;;
 esac
 exit 0
@@ -196,6 +197,28 @@ bash -c 'adb -t 28 shell input tap 1 1; adb -t 28 shell input text after-stop' &
 settle 2.5
 check "stop ends the rest of the script"    none "$(grep -q 'after-stop' "$FAKE_LOG" && echo ran || echo none)"
 kill $script 2>/dev/null
+
+# shot.sh: a phone command, and a small JPEG with the tap scale.
+start
+check "cancel: shot.sh refused"             deny "$(cancelled 'bash scripts/shot.sh 28 s.jpg')"
+python3 - "$TMP/full.png" <<'PY'
+import struct, sys, zlib
+w, h = 1080, 2340
+row = b"\x00" + bytes(range(256)) * 12 + b"\x00" * (w * 3 - 3072)
+raw = row * h
+def chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d))
+open(sys.argv[1], "wb").write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+                              + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+PY
+export FAKE_PNG=$TMP/full.png
+if command -v magick >/dev/null 2>&1 || command -v convert >/dev/null 2>&1 || command -v ffmpeg >/dev/null 2>&1; then
+  out=$(bash "$SCRIPTS/shot.sh" 28 "$TMP/s.jpg")
+  check "shot.sh prints the tap scale"        "$TMP/s.jpg scale 2.000 (device = image x scale)" "$out"
+  check "shot.sh writes a JPEG"               jpeg "$(head -c3 "$TMP/s.jpg" | od -An -tx1 | tr -d ' \n' | grep -q '^ffd8ff' && echo jpeg)"
+fi
+out=$(bash "$SCRIPTS/shot.sh" 28 "$TMP/f.png" full)
+check "shot.sh full keeps the PNG"          "$TMP/f.png scale 1 (full 1080px PNG)" "$out"
+check "shot.sh full is byte-identical"      same "$(cmp -s "$TMP/f.png" "$FAKE_PNG" && echo same)"
 
 # /proc/uptime counts deep sleep and getevent's clock does not, so on a real
 # phone uptime runs far ahead of event stamps (S25: 83567 vs ~60499).

@@ -16,19 +16,20 @@ Everything here assumes `D="adb -t <transport_id>"` from the connect step.
 ## Screenshots and the coordinate trap
 
 ```bash
-$D exec-out screencap -p > shot.png
+bash scripts/shot.sh <id> shot.jpg   # prints "shot.jpg scale 2.000 (device = image x scale)"
 ```
 
-`exec-out` streams raw bytes. Plain `shell` pushes the PNG through a pty and
-corrupts it — if the image comes out broken, that is why.
+`shot.sh` downscales to a 540 px JPEG (`full` as a third argument keeps the PNG).
+By hand, use `$D exec-out screencap -p > shot.png`: `exec-out` streams raw
+bytes, while plain `shell` pushes the PNG through a pty and corrupts it.
 
-When you view the PNG, the tool reports something like *"original 1080x2340,
-displayed at 923x2000, multiply coordinates by 1.17"*. Tap coordinates must be in
-**device** pixels:
+Tap coordinates must be in **device** pixels. Multiply by `shot.sh`'s scale, and
+by the Read tool's own ratio if it reports one (*"displayed at 923x2000,
+multiply coordinates by 1.17"*):
 
 ```
-device_x = measured_x * ratio
-device_y = measured_y * ratio
+device_x = measured_x * shot_scale * read_ratio
+device_y = measured_y * shot_scale * read_ratio
 ```
 
 Skipping this puts every tap slightly up and to the left. The symptom is a tap

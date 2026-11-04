@@ -152,24 +152,26 @@ watcher, stop and tell the user instead of retrying. A phone with no power or
 volume input device gets no gesture; the script says so, and phone commands are
 allowed. Tell the user they can't cancel from the phone in that case.
 
-A gesture kills only `adb -t <id> shell`/`exec-out` commands; anything else runs
-to completion, so **keep each on-device batch short**, about 3 seconds at most. The watcher's state lives in
+A gesture kills every running adb command aimed at the phone (by `-t`, `-s` or
+no selector), and the shell that launched it; anything else runs to completion,
+so **keep each on-device batch short**, about 3 seconds at most. The watcher's state lives in
 `${XDG_RUNTIME_DIR:-$HOME/.cache}/android-wireless-debug/`.
 
 ## Looking at the screen
 
 ```bash
-adb -t 5 exec-out screencap -p > shot.png
+bash scripts/shot.sh 5 shot.jpg        # -> "shot.jpg scale 2.000 (device = image x scale)"
 ```
 
-Use `exec-out`, not `shell`: `shell` mangles the binary PNG through the
-pseudo-terminal. Then view it with the Read tool.
+Then view it with the Read tool. `shot.sh` writes a 540 px-wide JPEG, about a
+tenth of the full PNG, so every look costs far less context. Pass `full` as a
+third argument only when you need to read small text.
 
-**The coordinate trap.** Screenshots are downscaled for display, and the tool
-tells you the ratio ("original 1080x2340, displayed at 923x2000, multiply by
-1.17"). Tap coordinates must be in *device* pixels, so multiply whatever you
-measure off the image. Forgetting this makes taps land slightly high and left,
-which reads as "the tap did nothing" and sends you off debugging the wrong thing.
+**The coordinate trap.** Tap coordinates must be in *device* pixels. Multiply
+whatever you measure off the image by `shot.sh`'s scale, and also by the Read
+tool's own ratio if it reports one ("displayed at ..., multiply by 1.17").
+Forgetting this makes taps land high and left, which reads as "the tap did
+nothing" and sends you off debugging the wrong thing.
 
 Full UI-driving reference — taps, swipes, text entry, keyevents, and locating
 elements without eyeballing pixels: **`references/ui-driving.md`**.
@@ -233,7 +235,7 @@ $D shell am start -n "$($D shell cmd package resolve-activity --brief -c android
 sleep 5
 $D shell input tap 76 172;  sleep 2
 $D shell input tap 825 221; sleep 3
-$D exec-out screencap -p > after.png
+bash scripts/shot.sh 5 after.jpg
 ```
 
 Each iteration becomes a single command instead of a dozen round trips, and every

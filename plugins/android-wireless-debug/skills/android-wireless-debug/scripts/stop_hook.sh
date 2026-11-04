@@ -52,7 +52,7 @@ if grep -q 'adb_connect\.sh' <<<"$CMD" && [ -n "$SESSION" ]; then
   mkdir -p "$STATE" && printf '%s\n' "$SESSION" > "$STATE/session"
 fi
 
-# Commands that reach the phone: adb itself, ui_find.sh (which runs adb), and
+# Commands that reach the phone: adb itself, ui_find.sh and shot.sh (which run adb), and
 # tools that drive a device through adb without naming it.
 # adb_connect.sh and stop_watch.sh don't count, nor do adb subcommands that
 # never touch the phone's screen or apps, such as disconnecting: every adb in
@@ -61,8 +61,8 @@ rest=$(sed -E 's/adb_connect\.sh|stop_watch\.sh//g' <<<"$CMD")
 ADB='(^|[^[:alnum:]_-])adb($|[^[:alnum:]_-])'
 SAFE='(^|[^[:alnum:]_-])adb( +-[st] +[^ ;&|]+)* +(disconnect|devices|kill-server|mdns|version|usb)($|[^[:alnum:]_-])'
 TOOLS='(^|[^[:alnum:]_-])(scrcpy|fastboot)($|[^[:alnum:]_-])|gradlew?[^;&|]*[[:space:]:](install|connected|uninstall)[[:alnum:]]*|flutter[[:space:]]+(run|install|drive|test|attach)|run-android|run:android'
-grep -qE "$ADB|ui_find\.sh|$TOOLS" <<<"$rest" || exit 0
-if ! grep -qE "ui_find\.sh|$TOOLS" <<<"$rest" \
+grep -qE "$ADB|(ui_find|shot)\.sh|$TOOLS" <<<"$rest" || exit 0
+if ! grep -qE "(ui_find|shot)\.sh|$TOOLS" <<<"$rest" \
    && [ "$(grep -oE "$ADB" <<<"$rest" | wc -l)" = "$(grep -oE "$SAFE" <<<"$rest" | wc -l)" ]; then
   exit 0
 fi
