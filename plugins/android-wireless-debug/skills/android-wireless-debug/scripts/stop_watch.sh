@@ -62,17 +62,46 @@ detect() {
     { n = 0 }'
 }
 
+# Whether adb's args (after the program) reach this phone: -t <tid>,
+# -s <serial>, or no selector at all (adb then picks the only device), with a
+# subcommand other than the few that never touch the phone.
+targets_phone() {  # targets_phone <tid> <serial> <args...>
+  local tid="$1" serial="$2" sel="" val=""; shift 2
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -t|-s)    sel="$1"; val="${2:-}"; shift 2 ;;
+      -t?*)     sel=-t; val="${1#-t}"; shift ;;
+      -s?*)     sel=-s; val="${1#-s}"; shift ;;
+      -[HPL])   shift 2 ;;
+      -[ade])   shift ;;
+      fork-server|server|nodaemon|start-server|kill-server|devices|disconnect|connect|version|mdns|usb|get-serialno|get-state|pair)
+                return 1 ;;
+      *)        break ;;
+    esac
+  done
+  [ $# -gt 0 ] || return 1
+  case "$sel" in
+    -t) [ "$val" = "$tid" ] ;;
+    -s) [ -n "$serial" ] && [ "$val" = "$serial" ] ;;
+    *)  [ -z "${ANDROID_SERIAL:-}" ] || [ "$ANDROID_SERIAL" = "$serial" ] ;;
+  esac
+}
+
 # Kill this machine's adb commands still running against the phone, such as a
-# batch of taps in one `adb shell`, so a stop does not wait for them to finish.
-# A non-interactive shell that launched one (`bash -c`, as Claude's Bash tool
-# runs commands) is killed first, so its later adb lines never start; an
-# interactive terminal is left alone. The watcher's own stream is spared.
+# batch of taps in one `adb shell` or an `adb -s <ip:port> install`, so a stop
+# does not wait for them to finish. A non-interactive shell that launched one
+# (`bash -c`, as Claude's Bash tool runs commands) is killed first, so its
+# later adb lines never start; an interactive terminal is left alone. The
+# watcher's own stream and other devices' commands are spared.
 kill_in_flight() {
-  local tid="$1" pid parent
+  local tid="$1" serial="$2" pid parent args
   # Anchored on the program: adb itself (or a script run as adb), never a
   # process that merely mentions adb in its arguments.
-  for pid in $(pgrep -f "^([^ ]+ )?([^ ]*/)?adb(\.exe)? (.* )?-t $tid (shell|exec-out)"); do
-    proc_args "$pid" | grep -q 'getevent -lt' && continue
+  for pid in $(pgrep -f '^([^ ]+ )?([^ ]*/)?adb(\.exe)? '); do
+    args=$(proc_args "$pid")
+    grep -q 'getevent -lt' <<<"$args" && continue
+    # shellcheck disable=SC2046  # split the command line back into words
+    targets_phone "$tid" "$serial" $(sed -E 's#^([^ ]+ )?([^ ]*/)?adb(\.exe)? ##' <<<"$args") || continue
     parent=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
     if [ -n "$parent" ] && proc_args "$parent" | grep -qE '^([^ ]*/)?(ba|da|z|k)?sh (-[a-z]+ )*-[a-z]*c '; then
       kill "$parent" 2>/dev/null
@@ -83,7 +112,9 @@ kill_in_flight() {
 
 run() {  # run <state_dir> <transport_id> <device...>
   local tid="$2"; shift 2
-  local reason dev script=""
+  local reason dev script="" serial
+  # Commands may name the phone by its serial (`adb -s ip:port ...`) instead.
+  serial=$(adb -t "$tid" get-serialno 2>/dev/null | tr -d '\r')
   # getevent takes a single device, so run one per button device, all in one
   # adb shell: a single stream, and the touchscreen is never read. -tt gives
   # getevent a terminal, so it writes each event at once instead of holding
@@ -96,7 +127,7 @@ run() {  # run <state_dir> <transport_id> <device...>
   trap 'trap "" TERM; kill -TERM -- -$$ 2>/dev/null || kill_tree $$; exit 0' TERM
   while IFS= read -r reason; do
     write_cancel "$reason"
-    kill_in_flight "$tid"
+    kill_in_flight "$tid" "$serial"
   done < <(adb -t "$tid" shell -tt "$script" </dev/null 2>/dev/null | detect)
   # The stream ended without `stop_watch.sh stop`: adb dropped or the phone
   # rebooted. adb_connect.sh starts a new watcher on reconnect.

@@ -33,8 +33,11 @@ case "\$*" in
                      if [ -n "\${FAKE_HOLD:-}" ]; then
                        trap 'kill \$! 2>/dev/null; exit 143' TERM; sleep 600 & wait
                      fi ;;
-  *"input tap"*)     trap 'kill \$! 2>/dev/null; exit 143' TERM
-                     sleep 30 & wait ;;   # a long on-device batch
+  *"input tap"*|*" install "*)
+                     trap 'kill \$! 2>/dev/null; exit 143' TERM
+                     sleep 30 & wait ;;   # a long on-device batch, or an APK upload
+  *get-serialno*)    echo 100.1.2.3:54321 ;;
+  *"screencap -p"*)  cat "\$FAKE_PNG" ;;
   *"/proc/uptime"*)  echo "\${FAKE_UPTIME:-57650.00} 1000.00" ;;
 esac
 exit 0
@@ -173,6 +176,19 @@ check "stop kills the running batch"        dead "$(kill -0 $batch 2>/dev/null &
 check "stop spares the watcher itself"      yes  "$(kill -0 "$(cat "$AWD_STATE_DIR/watcher.pid")" 2>/dev/null && echo yes)"
 kill $batch 2>/dev/null
 
+# Commands that name the phone by serial, or by nothing, are cut short too
+# (an `adb -s ip:port install` once ran on after a press); another device's are not.
+watch_ stop; rm -rf "$AWD_STATE_DIR"
+FAKE_HOLD=1 FAKE_DELAY=1.5 FAKE_EVENTS="$FIX/power.txt" watch_ start 28
+adb -s 100.1.2.3:54321 install -r app.apk & by_serial=$!
+adb install -r app.apk & no_selector=$!
+adb -s 10.9.9.9:5555 shell input tap 1 1 & other_device=$!
+settle 2.5
+check "stop kills an install by serial"        dead  "$(kill -0 $by_serial 2>/dev/null && echo alive || echo dead)"
+check "stop kills an install with no selector" dead  "$(kill -0 $no_selector 2>/dev/null && echo alive || echo dead)"
+check "stop spares another device's command"   alive "$(kill -0 $other_device 2>/dev/null && echo alive || echo dead)"
+kill $by_serial $no_selector $other_device 2>/dev/null
+
 # A stop also ends the script that sent the batch, so its later adb lines
 # never run.
 watch_ stop; rm -rf "$AWD_STATE_DIR"; : > "$FAKE_LOG"
@@ -181,6 +197,28 @@ bash -c 'adb -t 28 shell input tap 1 1; adb -t 28 shell input text after-stop' &
 settle 2.5
 check "stop ends the rest of the script"    none "$(grep -q 'after-stop' "$FAKE_LOG" && echo ran || echo none)"
 kill $script 2>/dev/null
+
+# shot.sh: a phone command, and a small JPEG with the tap scale.
+start
+check "cancel: shot.sh refused"             deny "$(cancelled 'bash scripts/shot.sh 28 s.jpg')"
+python3 - "$TMP/full.png" <<'PY'
+import struct, sys, zlib
+w, h = 1080, 2340
+row = b"\x00" + bytes(range(256)) * 12 + b"\x00" * (w * 3 - 3072)
+raw = row * h
+def chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d))
+open(sys.argv[1], "wb").write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+                              + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+PY
+export FAKE_PNG=$TMP/full.png
+if command -v magick >/dev/null 2>&1 || command -v convert >/dev/null 2>&1 || command -v ffmpeg >/dev/null 2>&1; then
+  out=$(bash "$SCRIPTS/shot.sh" 28 "$TMP/s.jpg")
+  check "shot.sh prints the tap scale"        "$TMP/s.jpg scale 2.000 (device = image x scale)" "$out"
+  check "shot.sh writes a JPEG"               jpeg "$(head -c3 "$TMP/s.jpg" | od -An -tx1 | tr -d ' \n' | grep -q '^ffd8ff' && echo jpeg)"
+fi
+out=$(bash "$SCRIPTS/shot.sh" 28 "$TMP/f.png" full)
+check "shot.sh full keeps the PNG"          "$TMP/f.png scale 1 (full 1080px PNG)" "$out"
+check "shot.sh full is byte-identical"      same "$(cmp -s "$TMP/f.png" "$FAKE_PNG" && echo same)"
 
 # /proc/uptime counts deep sleep and getevent's clock does not, so on a real
 # phone uptime runs far ahead of event stamps (S25: 83567 vs ~60499).
