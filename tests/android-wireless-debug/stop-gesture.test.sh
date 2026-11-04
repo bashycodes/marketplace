@@ -33,8 +33,10 @@ case "\$*" in
                      if [ -n "\${FAKE_HOLD:-}" ]; then
                        trap 'kill \$! 2>/dev/null; exit 143' TERM; sleep 600 & wait
                      fi ;;
-  *"input tap"*)     trap 'kill \$! 2>/dev/null; exit 143' TERM
-                     sleep 30 & wait ;;   # a long on-device batch
+  *"input tap"*|*" install "*)
+                     trap 'kill \$! 2>/dev/null; exit 143' TERM
+                     sleep 30 & wait ;;   # a long on-device batch, or an APK upload
+  *get-serialno*)    echo 100.1.2.3:54321 ;;
   *"/proc/uptime"*)  echo "\${FAKE_UPTIME:-57650.00} 1000.00" ;;
 esac
 exit 0
@@ -172,6 +174,19 @@ kill $bystander 2>/dev/null
 check "stop kills the running batch"        dead "$(kill -0 $batch 2>/dev/null && echo alive || echo dead)"
 check "stop spares the watcher itself"      yes  "$(kill -0 "$(cat "$AWD_STATE_DIR/watcher.pid")" 2>/dev/null && echo yes)"
 kill $batch 2>/dev/null
+
+# Commands that name the phone by serial, or by nothing, are cut short too
+# (an `adb -s ip:port install` once ran on after a press); another device's are not.
+watch_ stop; rm -rf "$AWD_STATE_DIR"
+FAKE_HOLD=1 FAKE_DELAY=1.5 FAKE_EVENTS="$FIX/power.txt" watch_ start 28
+adb -s 100.1.2.3:54321 install -r app.apk & by_serial=$!
+adb install -r app.apk & no_selector=$!
+adb -s 10.9.9.9:5555 shell input tap 1 1 & other_device=$!
+settle 2.5
+check "stop kills an install by serial"        dead  "$(kill -0 $by_serial 2>/dev/null && echo alive || echo dead)"
+check "stop kills an install with no selector" dead  "$(kill -0 $no_selector 2>/dev/null && echo alive || echo dead)"
+check "stop spares another device's command"   alive "$(kill -0 $other_device 2>/dev/null && echo alive || echo dead)"
+kill $by_serial $no_selector $other_device 2>/dev/null
 
 # A stop also ends the script that sent the batch, so its later adb lines
 # never run.
