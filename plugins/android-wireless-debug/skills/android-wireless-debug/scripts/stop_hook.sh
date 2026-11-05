@@ -7,6 +7,10 @@
 #   adb_connect.sh, which restarts it, so the gesture always works.
 # Reads the tool call JSON on stdin; prints a deny decision, or nothing.
 #
+# `stop_hook.sh turn-end` is the Stop hook: after a turn in which this session
+# ran phone commands, it opens the Claude app on the phone (stop_watch.sh
+# open-app), so the user lands on Claude's reply.
+#
 # `stop_hook.sh session-end` is the SessionEnd hook: it stops the watcher when
 # the session that connected (ran adb_connect.sh) ends.
 set -uo pipefail
@@ -29,6 +33,9 @@ print(d if isinstance(d,str) else "")' "$1" <<<"$INPUT"
   elif [ "$1" = .tool_input.command ]; then printf '%s' "$INPUT"; fi
 }
 SESSION=$(field .session_id)
+# Marks that this session used the phone this turn; only plain characters in
+# the file name.
+USED="$STATE/used.$(tr -cd '[:alnum:]_-' <<<"$SESSION")"
 
 # A process's full command line. `ps -o args=` cuts it at $COLUMNS, and a hook
 # can run with a narrow one; the plugin's install path alone can be wider.
@@ -37,9 +44,17 @@ proc_args() {
   else ps -ww -o args= -p "$1" 2>/dev/null; fi
 }
 
+if [ "${1:-}" = turn-end ]; then
+  if [ -n "$SESSION" ] && rm "$USED" 2>/dev/null; then
+    bash "$(dirname "$0")/stop_watch.sh" open-app >/dev/null 2>&1
+  fi
+  exit 0
+fi
+
 if [ "${1:-}" = session-end ]; then
+  rm -f "$USED"
   if [ -n "$SESSION" ] && [ "$(cat "$STATE/session" 2>/dev/null)" = "$SESSION" ]; then
-    bash "$(dirname "$0")/stop_watch.sh" stop >/dev/null 2>&1
+    bash "$(dirname "$0")/stop_watch.sh" stop --no-return >/dev/null 2>&1
     rm -f "$STATE/session"
   fi
   exit 0
@@ -91,8 +106,14 @@ if mv "$STATE/cancel" "$taken" 2>/dev/null; then
   fi
 fi
 
+# Allowed: remember the phone was used, so the turn's end opens the Claude app.
+allow() {
+  [ -n "$SESSION" ] && mkdir -p "$STATE" && : > "$USED"
+  exit 0
+}
+
 # The phone has no button devices: no gesture to watch for.
-[ -f "$STATE/unavailable" ] && exit 0
+[ -f "$STATE/unavailable" ] && allow
 
 # No watcher (never connected, or it lost the phone): the gesture would do
 # nothing, so have Claude reconnect, which restarts it.
@@ -100,4 +121,4 @@ pid=$(cat "$STATE/watcher.pid" 2>/dev/null)
 if [ -z "$pid" ] || ! proc_args "$pid" | grep -qF "stop_watch.sh _run $STATE "; then
   deny "The stop-gesture watcher is not running, so the user cannot cancel you from the phone. Reconnect now by running adb_connect.sh on its own (not chained with phone commands), without asking the user; it restarts the watcher. Then retry. If adb_connect.sh fails, or says it could not start the watcher, stop and tell the user instead of retrying."
 fi
-exit 0
+allow

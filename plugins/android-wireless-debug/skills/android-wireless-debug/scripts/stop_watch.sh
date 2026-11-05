@@ -4,7 +4,9 @@
 # Usage:
 #   stop_watch.sh start <transport_id>   # (re)start watching; adb_connect.sh does this
 #   stop_watch.sh status                 # watching | not running | unavailable
-#   stop_watch.sh stop                   # stop watching, when done with the phone
+#   stop_watch.sh stop [--no-return]     # stop watching, when done with the phone;
+#                                        # opens the Claude app first, unless --no-return
+#   stop_watch.sh open-app               # bring the Claude app to the front
 #
 # Stop gesture: a power press, or volume up-down-up-down within 3 seconds.
 # Either cancels what Claude is doing on the phone: it kills the running phone
@@ -12,9 +14,16 @@
 # refuses the next phone command once, telling Claude why. Nothing stays
 # blocked.
 #
+# When Claude is done with the phone, it hands it back on the Claude app: the
+# Stop hook (stop_hook.sh turn-end) runs `open-app` after a turn that used the
+# phone, and `stop` does it before letting go, since the hook can't once adb
+# disconnects.
+#
 # Env:
 #   AWD_STATE_DIR  where the watcher's state lives
 #                  (default ${XDG_RUNTIME_DIR:-$HOME/.cache}/android-wireless-debug)
+#   AWD_RETURN_APP the app to open when done (default com.anthropic.claude;
+#                  empty to leave the phone as it is)
 set -uo pipefail
 
 STATE="${AWD_STATE_DIR:-${XDG_RUNTIME_DIR:-$HOME/.cache}/android-wireless-debug}"
@@ -166,6 +175,8 @@ start() {
     say "Phone commands stay refused until the watcher runs. Stop and tell the user."
     return 1
   fi
+  # The phone answered: open-app may reach it on this transport from now on.
+  echo "$tid" > "$STATE/tid"
   if [ -z "$devs" ]; then
     : > "$STATE/unavailable"
     say "unavailable: no power or volume input devices found on this phone."
@@ -196,7 +207,7 @@ kill_tree() {  # without setsid there is no group to kill: children first
 
 stop() {
   local pid
-  rm -f "$STATE/unavailable"
+  rm -f "$STATE/unavailable" "$STATE/tid"
   pid=$(cat "$STATE/watcher.pid" 2>/dev/null)
   rm -f "$STATE/watcher.pid"
   if [ -n "$pid" ] && is_watcher "$pid"; then
@@ -208,6 +219,21 @@ stop() {
   for pid in $(pgrep -f 'stop_watch\.sh _run '); do
     proc_args "$pid" | grep -qF "stop_watch.sh _run $STATE " && kill_tree "$pid"
   done
+  return 0
+}
+
+# Bring the Claude app to the front, so the user lands on Claude's reply.
+# monkey launches a package's launcher activity without naming it; a package
+# that isn't installed just aborts it. Quiet and best-effort: an unreachable
+# phone or a missing app changes nothing.
+open_app() {
+  local tid app="${AWD_RETURN_APP-com.anthropic.claude}"
+  [ -n "$app" ] || return 0
+  tid=$(tr -cd '0-9' < "$STATE/tid" 2>/dev/null)
+  [ -n "$tid" ] || return 0
+  app=$(tr -cd '[:alnum:]._' <<<"$app")
+  local t=""; command -v timeout >/dev/null 2>&1 && t="timeout 8"
+  $t adb -t "$tid" shell monkey -p "$app" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1 </dev/null
   return 0
 }
 
@@ -225,8 +251,9 @@ status() {
 
 case "${1:-}" in
   start)  start "${2:?transport id}" ;;
-  stop)   stop ;;
+  stop)   [ "${2:-}" = --no-return ] || open_app; stop ;;
+  open-app) open_app ;;
   status) status ;;
   _run)   shift; run "$@" ;;
-  *)      sed -n '2,17p' "$0" >&2; exit 2 ;;
+  *)      sed -n '2,26p' "$0" >&2; exit 2 ;;
 esac

@@ -1,5 +1,5 @@
 {
-  "description": "Refuse Claude's next phone command once after the user cancels with the stop gesture (power press, or volume up-down-up-down), so it stops the task; while no watcher is running, refuse phone commands until Claude reconnects; stop the watcher when the session that connected ends.",
+  "description": "Refuse Claude's next phone command once after the user cancels with the stop gesture (power press, or volume up-down-up-down), so it stops the task; while no watcher is running, refuse phone commands until Claude reconnects; open the Claude app on the phone when a turn that used it ends; stop the watcher when the session that connected ends.",
   "hooks": {
     "PreToolUse": [
       {
@@ -9,6 +9,17 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/android-wireless-debug/scripts/stop_hook.sh\"",
             "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/android-wireless-debug/scripts/stop_hook.sh\" turn-end",
+            "timeout": 10
           }
         ]
       }
