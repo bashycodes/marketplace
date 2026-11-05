@@ -21,6 +21,10 @@ Once connected, **press the power button, or volume up-down-up-down** within 3 s
 
 If no watcher is running (no connection yet, or it lost the phone), the hook refuses Claude's phone commands and tells it to rerun `adb_connect.sh`, which restarts the watcher; Claude does that on its own. Because the hook applies to every Claude Code session while the plugin is enabled, adb used for other work also needs `adb_connect.sh` first.
 
+## Handing the phone back
+
+When Claude finishes a turn in which it used the phone, a Stop hook opens the **Claude app** on the phone, so you land on its reply. `stop_watch.sh stop` (Claude's "done with the phone" step) does the same before letting go. Set `AWD_RETURN_APP` to another package name to open that instead, or to an empty string to leave the phone as it is.
+
 ## Requirements
 
 - `adb` (Android platform-tools) on `PATH`
@@ -34,7 +38,7 @@ If no watcher is running (no connection yet, or it lost the phone), the hook ref
 | `skills/android-wireless-debug/SKILL.md` | The workflow: connect → look → root-cause → fix → reinstall → look again |
 | `scripts/adb_connect.sh` | Connection cascade |
 | `scripts/stop_watch.sh` | Watches the phone's buttons for the stop gesture |
-| `scripts/stop_hook.sh` + `hooks/hooks.json` | PreToolUse hook: refuses the next phone command after a cancel, and phone commands while no watcher runs; SessionEnd cleanup |
+| `scripts/stop_hook.sh` + `hooks/hooks.json` | PreToolUse hook: refuses the next phone command after a cancel, and phone commands while no watcher runs; Stop hook: opens the Claude app after a turn that used the phone; SessionEnd cleanup |
 | `scripts/ui_find.sh` | Resolve a UI element to tap coordinates via uiautomator dump |
 | `references/ui-driving.md` | Driving the UI without eyeballing pixels |
 | `references/diagnostics.md` | Theme, insets, packaging and crash diagnostics from system state |

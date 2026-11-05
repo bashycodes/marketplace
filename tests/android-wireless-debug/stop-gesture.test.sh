@@ -285,6 +285,47 @@ check "another session ending: still watching" yes "$(bash "$SCRIPTS/stop_watch.
 end_session sess-A
 check "connecting session ending: watcher stopped" yes "$(bash "$SCRIPTS/stop_watch.sh" status 2>&1 | grep -q '^not running' && echo yes)"
 
+# When Claude is done with the phone it opens the Claude app: at the end of a
+# turn that used the phone, and on `stop_watch.sh stop`.
+turn_end() { jq -n --arg s "$1" '{session_id:$s,hook_event_name:"Stop"}' | bash "$SCRIPTS/stop_hook.sh" turn-end; }
+opened() { grep -c 'monkey -p com.anthropic.claude' "$FAKE_LOG" | tr -d ' '; }
+start; : > "$FAKE_LOG"
+hook "$TAP" sess-A >/dev/null; turn_end sess-A
+check "turn that used the phone: Claude app opened" 1 "$(opened)"
+check "opened on the phone's transport"      yes  "$(grep -q '^-t 28 shell monkey -p com.anthropic.claude -c android.intent.category.LAUNCHER 1$' "$FAKE_LOG" && echo yes)"
+turn_end sess-A
+check "next turn without the phone: not again" 1 "$(opened)"
+hook 'git status' sess-A >/dev/null; hook 'adb devices' sess-A >/dev/null; turn_end sess-A
+check "non-phone and safe adb commands: not opened" 1 "$(opened)"
+hook "$TAP" sess-B >/dev/null; turn_end sess-A
+check "another session's phone use: not opened" 1 "$(opened)"
+turn_end sess-B
+check "that session's turn end: opened"       2 "$(opened)"
+hook "$TAP" sess-A >/dev/null; AWD_RETURN_APP=com.example.other turn_end sess-A
+check "AWD_RETURN_APP picks the app"          yes  "$(grep -q 'monkey -p com.example.other ' "$FAKE_LOG" && echo yes)"
+hook "$TAP" sess-A >/dev/null; : > "$FAKE_LOG"; AWD_RETURN_APP= turn_end sess-A
+check "empty AWD_RETURN_APP: nothing opened"  0    "$(opened)"
+mkdir -p "$AWD_STATE_DIR"; printf 'reason=power\ntime=12:00:00\nepoch=%s\n' "$(date +%s)" > "$AWD_STATE_DIR/cancel"
+hook "$TAP" sess-A >/dev/null; turn_end sess-A
+check "refused after a cancel: not counted as use" 0 "$(opened)"
+hook "$TAP" sess-A >/dev/null; watch_ stop
+check "stop_watch.sh stop opens the app first" 1 "$(opened)"
+turn_end sess-A
+check "after stop: the turn end doesn't again" 1 "$(opened)"
+start; : > "$FAKE_LOG"; watch_ stop --no-return
+check "stop --no-return: not opened"          0    "$(opened)"
+start; : > "$FAKE_LOG"; hook 'bash scripts/adb_connect.sh' sess-A >/dev/null; hook "$TAP" sess-A >/dev/null
+end_session sess-A
+check "session end: watcher stopped, app not opened" 0 "$(opened)"
+check "session end clears the turn's mark"    gone "$(ls "$AWD_STATE_DIR"/used.* >/dev/null 2>&1 && echo kept || echo gone)"
+watch_ stop; rm -rf "$AWD_STATE_DIR"; : > "$FAKE_LOG"
+hook "$TAP" sess-A >/dev/null; turn_end sess-A
+check "never connected: refused, nothing opened" 0 "$(opened)"
+grep -v -E 'KEY_POWER|KEY_VOLUME' "$FIX/getevent-pl.txt" > "$TMP/no-buttons.txt"
+FAKE_PL=$TMP/no-buttons.txt watch_ start 28; hook "$TAP" sess-A >/dev/null; turn_end sess-A
+check "no buttons: still opened at turn end"  1    "$(opened)"
+watch_ stop --no-return
+
 start; kill -9 "$(cat "$AWD_STATE_DIR/watcher.pid")"; settle 0.3   # SIGKILL: no trap runs
 check "SIGKILLed watcher: adb refused"      deny "$(decision "$TAP")"
 watch_ stop; settle 0.3

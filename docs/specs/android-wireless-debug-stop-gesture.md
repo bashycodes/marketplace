@@ -1,3 +1,8 @@
+> **1.3.2: Claude hands the phone back on the Claude app.**
+> - A Stop hook (`stop_hook.sh turn-end`) opens the Claude app (`AWD_RETURN_APP`, default `com.anthropic.claude`; empty turns it off) after a turn in which this session ran an allowed phone command, so the user lands on the reply. The PreToolUse hook marks that use in `used.<session_id>`; the turn end consumes it.
+> - `stop_watch.sh stop` opens the app before letting go, since the turn end can't reach the phone once adb disconnects. The SessionEnd hook stops with `--no-return`.
+> - The state dir also holds `tid` (the transport the watcher started on; removed by `stop`) and the `used.*` marks.
+
 > **1.3.0: the gesture cancels; it no longer locks.**
 > - A gesture kills Claude's running phone commands and writes a `cancel` file (reason, time, epoch; replaced by each later press). The hook refuses the next phone command once, if it comes within 60 s (`AWD_CANCEL_FRESH`), so Claude stops the task and waits for the user. Then nothing is blocked.
 > - Reconnecting deletes a cancel older than that, and any leftover 1.2.x `stop` file; a fresh cancel is kept, since Claude may be reconnecting because the cancel killed its command.

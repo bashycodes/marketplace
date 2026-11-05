@@ -255,7 +255,12 @@ This is not a lab device. It holds their real messages, photos and accounts.
   personal content. Take what the task needs; don't wander through unrelated apps.
 - **Disconnect when you're done**: `scripts/stop_watch.sh stop`, then
   `adb disconnect <ip:port>`. If the session ends first, a SessionEnd hook stops
-  the watcher. Pairing survives,
+  the watcher.
+- **The Claude app opens when you finish.** `stop_watch.sh stop` brings it to the
+  front, and so does a Stop hook at the end of any turn in which you used the
+  phone, so the user lands on your reply. That's expected; don't undo it. If the
+  last screen matters (e.g. the user should see the fixed app), say so in your
+  reply rather than leaving the phone on it. Pairing survives,
   so reconnecting later is cheap — there's no reason to sit on a live connection
   to someone's phone.
 - **`adb disconnect` does not close the port.** It drops your end only; a port
