@@ -43,5 +43,13 @@ check garbage-exits-4 4 "not json" -- b abc
 check no-args 4        "[$G]" --
 check bad-timeout 4    "[$G]" -- b abc x
 check timeout 2        "[$P]" -- b abc 0
+# A short sha is expanded to the full one gh needs.
+full=$(git -C "$ROOT" rev-parse HEAD)
+cat > "$TMP/bin/gh" <<STUB
+#!/usr/bin/env bash
+case "\$*" in *"--commit $full "*) echo '[$G]' ;; *) echo '[]' ;; esac
+STUB
+(cd "$ROOT" && check short-sha-expanded 0 x -- b "${full:0:7}" 90 0)
+cd "$TMP" && check short-sha-outside-repo 4 x -- b abc1234
 cd "$TMP" && check no-sha-outside-repo 4 "[$G]" -- b
 [ "$fail" -eq 0 ] && echo "all passed"; exit "$fail"

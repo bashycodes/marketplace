@@ -1,6 +1,6 @@
 {
   "name": "bashy-plugins",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "bashycodes' Claude Code toolkit: grill over TickTick from your phone, tmux bells when a session needs you, driving a real Android phone over ADB, and orchestrating a ticket queue through subagents.",
   "author": {
     "name": "bashycodes",
