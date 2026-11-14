@@ -9,8 +9,8 @@
     {
       "name": "bashy-plugins",
       "source": "./plugins/bashy-plugins",
-      "description": "Grill over TickTick from your phone, 😴/🔔 tmux bells when a session needs you, and drive a real Android phone over ADB.",
-      "version": "2.0.0",
+      "description": "Grill over TickTick from your phone, 😴/🔔 tmux bells when a session needs you, drive a real Android phone over ADB, and orchestrate a ticket queue through subagents.",
+      "version": "2.1.0",
       "category": "productivity",
       "keywords": [
         "ticktick",
