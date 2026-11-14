@@ -8,9 +8,9 @@ Know when a Claude Code session running in tmux needs you, without watching it.
 - The badge clears once Claude is working again, either because you sent a prompt or because a tool ran. It comes back the next time Claude stops.
 - To dismiss a badge by hand, press your tmux prefix, then `a`, in that window.
 
-Outside tmux the plugin does nothing.
+Outside tmux, and until you run setup, these hooks do nothing.
 
-> **Renamed from `claude-bells`.** Plugin names starting with `claude-` are reserved, so this plugin is now `tmux-bells`. If you installed `claude-bells`, its alerts stop once the marketplace updates: Claude Code reports it as not found in the marketplace and loads nothing from it. Install `bashy-plugins` (tmux-bells now ships inside it), then uninstall `claude-bells` to clear the error:
+> **Renamed from `claude-bells`, now part of `bashy-plugins`.** Plugin names starting with `claude-` are reserved, so `claude-bells` became `tmux-bells`, which now ships inside `bashy-plugins` (see the [upgrade note](../../../README.md#upgrading-from-the-standalone-plugins)). If you installed `claude-bells`, its alerts stop once the marketplace updates: Claude Code reports it as not found in the marketplace and loads nothing from it. Install `bashy-plugins` (tmux-bells now ships inside it), then uninstall `claude-bells` to clear the error:
 >
 > ```
 > /plugin install bashy-plugins@bashy-marketplace

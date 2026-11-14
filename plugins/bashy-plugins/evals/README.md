@@ -1,4 +1,6 @@
-# grill-over-ticktick evals
+# bashy-plugins evals
+
+All eval cases are for the TickTick grilling skills (formerly the grill-over-ticktick plugin).
 
 These evals talk to a **real TickTick account** if a token file (`~/.config/tt-grill/token`, or `$XDG_CONFIG_HOME/tt-grill/token`) exists.
 Run them with a throwaway HOME and without `TICKTICK_TOKEN` (it wins over any token file) or `XDG_CONFIG_HOME` (it moves the token file) so no token is found:

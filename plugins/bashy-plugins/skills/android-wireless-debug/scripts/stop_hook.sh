@@ -12,6 +12,10 @@
 set -uo pipefail
 
 STATE="${AWD_STATE_DIR:-${XDG_RUNTIME_DIR:-$HOME/.cache}/android-wireless-debug}"
+# Opt-in marker, written the first time Claude runs adb_connect.sh on this machine.
+# Until it exists the hook never refuses for a missing watcher, so installing the
+# bundle for its other features (tmux-bells, TickTick) leaves adb work alone.
+ENABLED="${AWD_ENABLED_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/android-wireless-debug/enabled}"
 INPUT=$(cat)
 # How long a cancel stays news: the command after it comes within seconds; a
 # later one belongs to a new request.
@@ -47,9 +51,11 @@ fi
 
 CMD=$(field .tool_input.command)
 
-# Remember which session connected, so only its end stops the watcher.
-if grep -q 'adb_connect\.sh' <<<"$CMD" && [ -n "$SESSION" ]; then
-  mkdir -p "$STATE" && printf '%s\n' "$SESSION" > "$STATE/session"
+# Remember which session connected, so only its end stops the watcher, and
+# that this machine uses the skill (see ENABLED).
+if grep -q 'adb_connect\.sh' <<<"$CMD"; then
+  [ -f "$ENABLED" ] || { mkdir -p "$(dirname "$ENABLED")" && : > "$ENABLED"; } 2>/dev/null
+  [ -n "$SESSION" ] && mkdir -p "$STATE" && printf '%s\n' "$SESSION" > "$STATE/session"
 fi
 
 # Commands that reach the phone: adb itself, ui_find.sh and shot.sh (which run adb), and
@@ -93,6 +99,8 @@ fi
 
 # The phone has no button devices: no gesture to watch for.
 [ -f "$STATE/unavailable" ] && exit 0
+# The skill was never used on this machine: nothing to enforce.
+[ -f "$ENABLED" ] || exit 0
 
 # No watcher (never connected, or it lost the phone): the gesture would do
 # nothing, so have Claude reconnect, which restarts it.

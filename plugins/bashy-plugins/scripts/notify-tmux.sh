@@ -10,6 +10,9 @@
 
 cat >/dev/null  # drain the hook's JSON payload
 [ -n "$TMUX" ] && [ -n "$TMUX_PANE" ] && command -v tmux >/dev/null || exit 0
+# Opt-in: silent until /bashy-plugins:tmux-bells-setup has put @claude_badge in the tmux config,
+# so installing the bundle for its other features rings no bells.
+[ -n "$(tmux show -gqv @claude_badge 2>/dev/null)" ] || exit 0
 
 case "$1" in
   clear)

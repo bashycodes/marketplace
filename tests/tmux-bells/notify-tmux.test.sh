@@ -45,6 +45,14 @@ t select-window -t "$PANE"
 [ -n "$CLEAR_KEY" ] && t $CLEAR_KEY  # unquoted on purpose: split into tmux arguments
 check "clear key removes the badge" "" "$(state)"
 
+# Opt-in: without setup's @claude_badge, no badge and no bell.
+badge=$(t show -gv @claude_badge); t set -gu @claude_badge; run clear; t set -w -t "$PANE" monitor-bell on
+t kill-window -t "$PANE"; PANE=$(t new-window -d -P -F '#{pane_id}' -n hidden 'sleep 600')
+run alert stop; sleep 0.3
+check "before setup: no badge"              ""  "$(state)"
+check "before setup: no bell"               0   "$(t display -p -t "$PANE" '#{window_bell_flag}')"
+t set -g @claude_badge "$badge"
+
 out=$(echo '{}' | env -u TMUX bash "$SCRIPT" alert stop; echo "exit=$?")
 check "outside tmux: silent no-op" "exit=0" "$out"
 

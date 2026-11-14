@@ -27,7 +27,7 @@ The whole thing runs on signals that already exist: Claude Code hooks, tmux opti
 
 It ships as a Claude Code plugin, `tmux-bells`, in a public plugin marketplace, and installs in two steps:
 
-1. **Install the plugin from the marketplace.** It brings the hook script and the hook wiring, which replace the hand-edited hook entries and hand-copied script of the first version. The script does nothing outside tmux, so installing the plugin is harmless for someone who doesn't use tmux.
+1. **Install the plugin from the marketplace.** It brings the hook script and the hook wiring, which replace the hand-edited hook entries and hand-copied script of the first version. The script does nothing outside tmux, or before setup has put `@claude_badge` in the tmux config, so installing the plugin (now the `bashy-plugins` bundle) is harmless for someone who doesn't use tmux or tmux-bells.
 2. **Run `/bashy-plugins:tmux-bells-setup` once.** tmux and terminal settings live outside anything a plugin can install, so this user-invoked skill wires them: the badge in the tmux status bar, the tmux focus and bell options, and the terminal's bell setting. It also removes hook entries left over from a hand-wired install, so alerts don't fire twice, and ends with a check on a scratch window.
 
 ### Behavior matrix
@@ -102,7 +102,7 @@ Claude waking itself up (a background task finishing, a monitor firing, a schedu
   - `alert <reason>`, where the reason is `stop`, `ask` or `perm` (default `stop`). If the pane isn't being looked at, it sets the window's tmux user option `@claude_waiting` to the reason and writes a BEL byte to the pane's tty. The bell rings the same for all three reasons.
   - `clear` unconditionally unsets `@claude_waiting` on the window.
   - It records only the reason and knows nothing about emoji.
-  - It always drains the hook's stdin JSON payload first. It exits 0 without doing anything if `TMUX` or `TMUX_PANE` is unset or tmux isn't on PATH, so the plugin is inert outside tmux.
+  - It always drains the hook's stdin JSON payload first. It exits 0 without doing anything if `TMUX` or `TMUX_PANE` is unset, tmux isn't on PATH, or the tmux server has no `@claude_badge` option (setup never ran), so the plugin is inert outside tmux and for bundle users who never opted in.
 - **Hook wiring, shipped by the plugin.** Installing the plugin wires every session where it's enabled. It replaces the hook entries the first version had hand-edited into the user's Claude settings:
 
   | Claude Code event | Matcher | Command |

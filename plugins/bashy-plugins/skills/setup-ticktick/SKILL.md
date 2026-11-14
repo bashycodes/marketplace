@@ -1,6 +1,6 @@
 ---
 name: setup-ticktick
-description: One-time setup for grill-over-ticktick — store the TickTick API token in the user's own terminal, verify it, and push a test question to the phone.
+description: One-time setup for the TickTick grilling skills — store the TickTick API token in the user's own terminal, verify it, and push a test question to the phone.
 disable-model-invocation: true
 argument-hint: ""
 allowed-tools: Bash(tt-grill *)
@@ -30,7 +30,7 @@ Never accept, display or read a token. The token is typed by the user in **their
    ```markdown
    ## Wayfinding over TickTick
 
-   Grilling tickets can be answered from the phone (grill-over-ticktick).
+   Grilling tickets can be answered from the phone (bashy-plugins TickTick skills).
    - In a map's `## Notes`, add: `Grilling tickets: call the Skill tool with "bashy-plugins:grill-with-ticktick" instead of "grilling"; it asks the user on their phone and files the resolution itself.`
    - Or run `/wayfind-with-ticktick <map>` to work the whole map from the phone, ticket after ticket.
    - The TickTick effort name is the map's directory name under `.scratch/` (or a `TickTick effort: <name>` line in the map's `## Notes`); there is one list per map.
