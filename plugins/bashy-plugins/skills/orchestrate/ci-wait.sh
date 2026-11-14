@@ -13,6 +13,10 @@ for t in gh jq git; do command -v "$t" >/dev/null 2>&1 || { echo "ci-wait.sh: $t
 branch=$1
 sha=${2:-$(git rev-parse --verify -q "origin/$branch^{commit}" || git rev-parse --verify -q "$branch^{commit}")} \
   || { echo "ci-wait.sh: cannot resolve a commit for $branch (pass the sha)" >&2; exit 4; }
+# gh matches --commit against full shas only: expand a short one.
+if [[ $sha =~ ^[0-9a-f]{4,39}$ ]]; then
+  sha=$(git rev-parse --verify -q "$sha^{commit}") || { echo "ci-wait.sh: cannot expand short sha (pass the full sha)" >&2; exit 4; }
+fi
 timeout_min=${3:-90}
 appear_s=${4:-300}
 [[ $timeout_min =~ ^[0-9]+$ && $appear_s =~ ^[0-9]+$ ]] || usage
