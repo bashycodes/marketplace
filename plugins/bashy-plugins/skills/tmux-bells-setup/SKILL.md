@@ -1,5 +1,5 @@
 ---
-name: setup
+name: tmux-bells-setup
 description: One-time per-machine wiring for tmux-bells. Adds the 😴/🔔 badge and a prefix-a clear key to your tmux tabs, makes your terminal react to the bell, and retires any hand-wired hooks.
 disable-model-invocation: true
 ---
@@ -84,9 +84,9 @@ Look for hook entries whose command contains `notify-tmux.sh` in:
 
 Remove only those entries, keep every other setting, and confirm the result is still valid JSON with `jq -e .`. If the old script file is left over, name its path and offer to delete it.
 
-If the plugin's old name, `claude-bells`, is still installed (a `claude-bells@bashy-marketplace` key in `enabledPlugins` in those files, whether `true` or `false`), Claude Code reports it as not found in the marketplace on every start. It loads nothing, so it does no harm, but tell the user to run `/plugin uninstall claude-bells@bashy-marketplace` to clear the error.
+If an old standalone plugin is still installed (a `claude-bells@bashy-marketplace`, `tmux-bells@bashy-marketplace`, `grill-over-ticktick@bashy-marketplace` or `android-wireless-debug@bashy-marketplace` key in `enabledPlugins` in those files, whether `true` or `false`), Claude Code reports it as not found in the marketplace on every start; all of them now ship inside `bashy-plugins`. It loads nothing, so it does no harm, but tell the user to run `/plugin uninstall <name>@bashy-marketplace` for each one to clear the error.
 
-**Done when:** none of those files mention `notify-tmux.sh`, and `claude-bells` is not installed.
+**Done when:** none of those files mention `notify-tmux.sh`, and none of those old plugins is installed.
 
 ## 5. Verify
 

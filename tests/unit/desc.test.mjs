@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalise, hashText, buildDesc, parseDesc, buildItems, classifyItems, OTHER_TITLE, KEY_RE, prefixTitle, parseTitlePrefix, taskUrl, LINK_FIELD, nextLine } from '../../plugins/grill-over-ticktick/lib/desc.mjs';
+import { normalise, hashText, buildDesc, parseDesc, buildItems, classifyItems, OTHER_TITLE, KEY_RE, prefixTitle, parseTitlePrefix, taskUrl, LINK_FIELD, nextLine } from '../../plugins/bashy-plugins/lib/desc.mjs';
 
 const Q = { key: 'r2.1', context: 'Where does the token live?\nTwo options matter.', rec: { label: '~/.config/tt-grill/token', why: 'survives uninstall' } };
 

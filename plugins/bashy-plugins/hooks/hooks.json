@@ -1,0 +1,27 @@
+{
+  "description": "tmux-bells: mark the tmux window and ring the bell when Claude needs you; clear it once Claude is working again. android-wireless-debug: refuse Claude's next phone command once after the user cancels with the stop gesture (power press, or volume up-down-up-down), so it stops the task; while no watcher is running, refuse phone commands until Claude reconnects; stop the watcher when the session that connected ends.",
+  "hooks": {
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/notify-tmux.sh\" alert stop", "timeout": 5 }] }
+    ],
+    "Notification": [
+      { "matcher": "permission_prompt|elicitation_dialog",
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/notify-tmux.sh\" alert perm", "timeout": 5 }] }
+    ],
+    "PreToolUse": [
+      { "matcher": "AskUserQuestion",
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/notify-tmux.sh\" alert ask", "timeout": 5 }] },
+      { "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/android-wireless-debug/scripts/stop_hook.sh\"", "timeout": 5 }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/notify-tmux.sh\" clear", "timeout": 5 }] }
+    ],
+    "PostToolUse": [
+      { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/notify-tmux.sh\" clear", "timeout": 5 }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/android-wireless-debug/scripts/stop_hook.sh\" session-end", "timeout": 10 }] }
+    ]
+  }
+}

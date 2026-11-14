@@ -5,7 +5,7 @@
 # No phone needed. Run: bash tests/android-wireless-debug/stop-gesture.test.sh
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-SCRIPTS=$ROOT/plugins/android-wireless-debug/skills/android-wireless-debug/scripts
+SCRIPTS=$ROOT/plugins/bashy-plugins/skills/android-wireless-debug/scripts
 FIX=$ROOT/tests/fixtures/android-wireless-debug
 
 TMP=$(mktemp -d)

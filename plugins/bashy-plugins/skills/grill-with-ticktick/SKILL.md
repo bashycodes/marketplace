@@ -57,7 +57,7 @@ Active when `$ARGUMENTS` carries `--ticket <path>` (quoted if it has spaces), or
 The `## Notes` line `/setup-ticktick` offers to put in a map:
 
 ```
-Grilling tickets: call the Skill tool with "grill-over-ticktick:grill-with-ticktick" instead of "grilling"; it asks the user on their phone and files the resolution itself.
+Grilling tickets: call the Skill tool with "bashy-plugins:grill-with-ticktick" instead of "grilling"; it asks the user on their phone and files the resolution itself.
 ```
 
 Typing in the terminal still switches to terminal mode (step 8); the ticket is then filed the same way when it converges.

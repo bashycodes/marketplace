@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { redact, createLogger } from '../../plugins/grill-over-ticktick/lib/log.mjs';
+import { redact, createLogger } from '../../plugins/bashy-plugins/lib/log.mjs';
 
 test('redact replaces every occurrence of every secret, ignores empty secrets', () => {
   assert.equal(redact('a s1 b s1 c s2', ['s1', 's2', '']), 'a [redacted] b [redacted] c [redacted]');

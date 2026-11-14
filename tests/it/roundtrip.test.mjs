@@ -5,10 +5,10 @@ import { homedir } from 'node:os';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { main } from '../../plugins/grill-over-ticktick/lib/cli.mjs';
-import { readToken } from '../../plugins/grill-over-ticktick/lib/token.mjs';
-import { createApi } from '../../plugins/grill-over-ticktick/lib/api.mjs';
-import { createLogger } from '../../plugins/grill-over-ticktick/lib/log.mjs';
+import { main } from '../../plugins/bashy-plugins/lib/cli.mjs';
+import { readToken } from '../../plugins/bashy-plugins/lib/token.mjs';
+import { createApi } from '../../plugins/bashy-plugins/lib/api.mjs';
+import { createLogger } from '../../plugins/bashy-plugins/lib/log.mjs';
 
 const enabled = process.env.TT_GRILL_IT === '1';
 

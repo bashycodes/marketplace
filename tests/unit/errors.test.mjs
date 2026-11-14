@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { EXIT, TtError, usage, authError, notFound, takenOver, gaveUp, apiError, toExit, AUTH_MESSAGE } from '../../plugins/grill-over-ticktick/lib/errors.mjs';
+import { EXIT, TtError, usage, authError, notFound, takenOver, gaveUp, apiError, toExit, AUTH_MESSAGE } from '../../plugins/bashy-plugins/lib/errors.mjs';
 
 test('exit table matches the spec', () => {
   assert.deepEqual(EXIT, { OK: 0, ERROR: 1, USAGE: 2, TAKEN_OVER: 3, GAVE_UP: 4, AUTH: 5, NOT_FOUND: 6 });

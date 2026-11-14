@@ -8,8 +8,8 @@ import { fakeTickTick } from '../helpers/fake-ticktick.mjs';
 import { fakeFetch } from '../helpers/fake-fetch.mjs';
 import { fakeClock } from '../helpers/fake-clock.mjs';
 import { fixture } from '../helpers/fixtures.mjs';
-import { writeToken } from '../../plugins/grill-over-ticktick/lib/token.mjs';
-import { main } from '../../plugins/grill-over-ticktick/lib/cli.mjs';
+import { writeToken } from '../../plugins/bashy-plugins/lib/token.mjs';
+import { main } from '../../plugins/bashy-plugins/lib/cli.mjs';
 
 const TOKEN = '0123456789abcdef-deliberately-wrong';
 const ROUND = { effort: 'e', round: 1, host: { goal: 'g', decided: [], open: ['r1.1 q — ⭐ a'], notAsked: [] }, questions: [{ key: 'r1.1', title: 'q?', context: 'c', rec: { label: 'a', why: 'w' }, options: ['a', 'b'] }] };

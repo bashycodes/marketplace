@@ -1,4 +1,4 @@
-import { hostTitle, writeBlock } from '../../plugins/grill-over-ticktick/lib/state.mjs';
+import { hostTitle, writeBlock } from '../../plugins/bashy-plugins/lib/state.mjs';
 
 /** @typedef {{ method: string, path: string, body: any, headers: Record<string,string> }} Call */
 

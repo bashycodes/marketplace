@@ -5,11 +5,11 @@ import { join } from 'node:path';
 import { tmpDir } from '../helpers/tmp.mjs';
 import { fakeTickTick } from '../helpers/fake-ticktick.mjs';
 import { body } from '../helpers/fixtures.mjs';
-import { createApi } from '../../plugins/grill-over-ticktick/lib/api.mjs';
-import { createLogger } from '../../plugins/grill-over-ticktick/lib/log.mjs';
-import { readBlock, writeBlock } from '../../plugins/grill-over-ticktick/lib/state.mjs';
-import { parseDesc, classifyItems, OTHER_TITLE, buildDesc, REC_PREFIX, LINK_FIELD, taskUrl } from '../../plugins/grill-over-ticktick/lib/desc.mjs';
-import { validateRound, compareKeys, signalFor, newOwner, takeover, push, pull, close, finish, efforts, ANSWERED } from '../../plugins/grill-over-ticktick/lib/rounds.mjs';
+import { createApi } from '../../plugins/bashy-plugins/lib/api.mjs';
+import { createLogger } from '../../plugins/bashy-plugins/lib/log.mjs';
+import { readBlock, writeBlock } from '../../plugins/bashy-plugins/lib/state.mjs';
+import { parseDesc, classifyItems, OTHER_TITLE, buildDesc, REC_PREFIX, LINK_FIELD, taskUrl } from '../../plugins/bashy-plugins/lib/desc.mjs';
+import { validateRound, compareKeys, signalFor, newOwner, takeover, push, pull, close, finish, efforts, ANSWERED } from '../../plugins/bashy-plugins/lib/rounds.mjs';
 
 const ROUND = {
   effort: 'e', round: 2,
@@ -464,7 +464,7 @@ test('truncated filter: pushlog keys the filter did not return are `unknown` (no
   assert.ok(!tt.calls.slice(before).some((c) => c.method === 'POST' && c.path !== '/task/filter'));
   assert.equal(tt.find(p.questions[0].taskId).status, 0);
   assert.ok(!readFileSync(join(ctx.pushlogDir, `${listId}.log`), 'utf8').includes('ingested'));
-  const { FINAL, TOUCHED } = await import('../../plugins/grill-over-ticktick/lib/rounds.mjs');
+  const { FINAL, TOUCHED } = await import('../../plugins/bashy-plugins/lib/rounds.mjs');
   assert.ok(!FINAL.has('unknown') && !TOUCHED.has('unknown'));
 });
 

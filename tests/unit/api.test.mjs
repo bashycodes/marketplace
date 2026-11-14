@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { fakeFetch, ok } from '../helpers/fake-fetch.mjs';
 import { fakeClock } from '../helpers/fake-clock.mjs';
 import { fixture, body } from '../helpers/fixtures.mjs';
-import { createLogger } from '../../plugins/grill-over-ticktick/lib/log.mjs';
-import { createApi, backoffMs, RETRY_STATUSES } from '../../plugins/grill-over-ticktick/lib/api.mjs';
+import { createLogger } from '../../plugins/bashy-plugins/lib/log.mjs';
+import { createApi, backoffMs, RETRY_STATUSES } from '../../plugins/bashy-plugins/lib/api.mjs';
 
 const TOKEN = '0123456789abcdef-deliberately-wrong'; // the exact string the 401 fixture echoes
 /** @param {import('../helpers/fake-fetch.mjs').Route[]} routes */
@@ -124,7 +124,7 @@ test('backoffMs table', () => {
 });
 
 test('a body over 2 MiB → exit 1 "response too large", no retry (streamed body, no content-length)', async () => {
-  const { MAX_BODY_BYTES } = await import('../../plugins/grill-over-ticktick/lib/api.mjs');
+  const { MAX_BODY_BYTES } = await import('../../plugins/bashy-plugins/lib/api.mjs');
   assert.equal(MAX_BODY_BYTES, 2 * 1024 * 1024);
   const { api, f, clock } = make([{ method: 'GET', path: '/project', reply: { status: 200, text: 'x'.repeat(MAX_BODY_BYTES + 1) } }]);
   await assert.rejects(api.get('/project'), (/** @type {any} */ e) => e.exitCode === 1 && /response too large/.test(e.message));
@@ -135,7 +135,7 @@ test('a body over 2 MiB → exit 1 "response too large", no retry (streamed body
 });
 
 test('a declared content-length over 2 MiB is refused before reading; a stream-less response is capped too', async () => {
-  const { MAX_BODY_BYTES } = await import('../../plugins/grill-over-ticktick/lib/api.mjs');
+  const { MAX_BODY_BYTES } = await import('../../plugins/bashy-plugins/lib/api.mjs');
   const clock = fakeClock(); const log = createLogger({ stderr: /** @type {any} */ ({ write() { return true; } }) });
   let n = 0;
   /** @type {any} */ const declared = async () => { n++; return new Response('[]', { status: 200, headers: { 'content-length': String(MAX_BODY_BYTES + 1) } }); };
@@ -181,7 +181,7 @@ test('Retry-After on 429/503 (seconds or HTTP-date) sets the wait, capped at 60 
 
 test('a small declared content-length is read normally (the cap only refuses larger ones)', async () => {
   const log = createLogger({ stderr: /** @type {any} */ ({ write() { return true; } }) });
-  const { MAX_BODY_BYTES } = await import('../../plugins/grill-over-ticktick/lib/api.mjs');
+  const { MAX_BODY_BYTES } = await import('../../plugins/bashy-plugins/lib/api.mjs');
   /** @type {any} */ const small = async () => new Response('[1]', { status: 200, headers: { 'content-length': '3' } });
   assert.deepEqual(await createApi({ fetch: small, token: TOKEN, log }).get('/project'), [1]);
   /** @type {any} */ const atCap = async () => new Response('[]', { status: 200, headers: { 'content-length': String(MAX_BODY_BYTES) } });

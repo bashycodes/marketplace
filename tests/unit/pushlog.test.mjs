@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpDir } from '../helpers/tmp.mjs';
-import { createPushlog, defaultStateDir } from '../../plugins/grill-over-ticktick/lib/pushlog.mjs';
+import { createPushlog, defaultStateDir } from '../../plugins/bashy-plugins/lib/pushlog.mjs';
 
 test('defaultStateDir honours XDG_STATE_HOME', () => {
   assert.equal(defaultStateDir({}, '/h'), '/h/.local/state/tt-grill');

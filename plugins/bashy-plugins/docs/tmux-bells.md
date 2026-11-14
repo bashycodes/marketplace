@@ -10,10 +10,10 @@ Know when a Claude Code session running in tmux needs you, without watching it.
 
 Outside tmux the plugin does nothing.
 
-> **Renamed from `claude-bells`.** Plugin names starting with `claude-` are reserved, so this plugin is now `tmux-bells`. If you installed `claude-bells`, its alerts stop once the marketplace updates: Claude Code reports it as not found in the marketplace and loads nothing from it. Install `tmux-bells`, then uninstall `claude-bells` to clear the error:
+> **Renamed from `claude-bells`.** Plugin names starting with `claude-` are reserved, so this plugin is now `tmux-bells`. If you installed `claude-bells`, its alerts stop once the marketplace updates: Claude Code reports it as not found in the marketplace and loads nothing from it. Install `bashy-plugins` (tmux-bells now ships inside it), then uninstall `claude-bells` to clear the error:
 >
 > ```
-> /plugin install tmux-bells@bashy-marketplace
+> /plugin install bashy-plugins@bashy-marketplace
 > /plugin uninstall claude-bells@bashy-marketplace
 > ```
 >
@@ -23,13 +23,13 @@ Outside tmux the plugin does nothing.
 
 ```
 /plugin marketplace add bashycodes/marketplace
-/plugin install tmux-bells@bashy-marketplace
+/plugin install bashy-plugins@bashy-marketplace
 ```
 
 Then, from a Claude session inside tmux, run this once per machine:
 
 ```
-/tmux-bells:setup
+/bashy-plugins:tmux-bells-setup
 ```
 
 Setup adds the badge to your tmux tabs, binds prefix `a` to clear it, turns on `focus-events`, and sets your terminal's bell reaction. It also removes any hand-wired `notify-tmux.sh` hooks, so alerts don't fire twice.
@@ -45,4 +45,4 @@ Setup adds the badge to your tmux tabs, binds prefix `a` to clear it, turns on `
 
 The emoji mapping is the `@claude_badge` option in your tmux config, so change it there if you want different emoji. The clear key is the `bind a set -wu @claude_waiting` line there too.
 
-Requires tmux 3.2 or later. The design and its decisions are in [SPEC.md](SPEC.md).
+Requires tmux 3.2 or later. The design and its decisions are in [tmux-bells-spec.md](tmux-bells-spec.md).

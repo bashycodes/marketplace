@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { COMMANDS } from '../../plugins/grill-over-ticktick/lib/cli.mjs';
+import { COMMANDS } from '../../plugins/bashy-plugins/lib/cli.mjs';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'plugins', 'grill-over-ticktick');
+const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'plugins', 'bashy-plugins');
 /** Per-skill expectations. manual = disable-model-invocation must be true.
  * @type {Record<string, {allowedTools: string, manual: boolean}>} */
 const EXPECT = {

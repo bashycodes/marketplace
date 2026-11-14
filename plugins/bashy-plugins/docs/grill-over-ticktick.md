@@ -6,7 +6,7 @@ Answer a grilling session from your phone. Claude sends each round of `/grill-me
 
 ```
 /plugin marketplace add bashycodes/marketplace
-/plugin install grill-over-ticktick@bashy-marketplace
+/plugin install bashy-plugins@bashy-marketplace
 ```
 
 Then run `/setup-ticktick` once. You paste your TickTick API token into your own terminal, never into the chat.
@@ -30,11 +30,11 @@ Works best with Matt Pocock's `mattpocock-skills` (its `grilling` skill). Withou
 
 ## Wayfinding
 
-Two routes. Notes route: `grill-with-ticktick` answers one ticket per `/wayfinder` session. `/wayfind-with-ticktick` works a whole map, ticket after ticket. Only one phone-grilling session per map runs at a time: a second takeover ends the first one's wait. The Notes route is unverified in a live `/wayfinder` run. The `evals/wayfind-*` evals need the plugin directory trusted once interactively (`claude plugin eval` refuses untrusted dirs non-interactively) and `--scaffold` to build their git fixture (see `evals/README.md`).
+Two routes. Notes route: `grill-with-ticktick` answers one ticket per `/wayfinder` session. `/wayfind-with-ticktick` works a whole map, ticket after ticket. Only one phone-grilling session per map runs at a time: a second takeover ends the first one's wait. The Notes route is unverified in a live `/wayfinder` run. The `evals/wayfind-*` evals need the plugin directory trusted once interactively (`claude plugin eval` refuses untrusted dirs non-interactively) and `--scaffold` to build their git fixture (see `../evals/README.md`).
 
 ## Reference
 
-- [conventions.md](references/conventions.md): the TickTick layout (folder, list, host note, question tasks, tag) and where the token lives.
-- [round-schema.md](references/round-schema.md): the `tt-grill` commands, their JSON and their exit codes.
-- [ingest.md](references/ingest.md): how answers are read back.
-- [wayfinding.md](references/wayfinding.md): the map/ticket file recipe the wayfinding skills follow.
+- [conventions.md](../references/conventions.md): the TickTick layout (folder, list, host note, question tasks, tag) and where the token lives.
+- [round-schema.md](../references/round-schema.md): the `tt-grill` commands, their JSON and their exit codes.
+- [ingest.md](../references/ingest.md): how answers are read back.
+- [wayfinding.md](../references/wayfinding.md): the map/ticket file recipe the wayfinding skills follow.

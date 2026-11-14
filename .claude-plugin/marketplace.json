@@ -7,41 +7,18 @@
   },
   "plugins": [
     {
-      "name": "grill-over-ticktick",
-      "source": "./plugins/grill-over-ticktick",
-      "description": "Relay /grill-me rounds to TickTick and answer from your phone, and work wayfinder maps from it too.",
-      "version": "1.1.1",
+      "name": "bashy-plugins",
+      "source": "./plugins/bashy-plugins",
+      "description": "Grill over TickTick from your phone, 😴/🔔 tmux bells when a session needs you, and drive a real Android phone over ADB.",
+      "version": "2.0.0",
       "category": "productivity",
       "keywords": [
         "ticktick",
         "grill-me",
-        "phone"
-      ]
-    },
-    {
-      "name": "tmux-bells",
-      "source": "./plugins/tmux-bells",
-      "description": "😴/🔔 badge on the tmux tab + terminal bell when a Claude Code session needs you; silent while you watch.",
-      "version": "1.2.0",
-      "category": "productivity",
-      "keywords": [
         "tmux",
         "notifications",
-        "bell"
-      ]
-    },
-    {
-      "name": "android-wireless-debug",
-      "source": "./plugins/android-wireless-debug",
-      "description": "Drive a real Android phone over ADB to see, test and fix an app — screenshots, UI taps, logcat/dumpsys, APK installs; connects over Tailscale from anywhere, or via USB-opened TCP from WSL.",
-      "version": "1.3.1",
-      "category": "development",
-      "keywords": [
         "android",
-        "adb",
-        "debugging",
-        "mobile",
-        "tailscale"
+        "adb"
       ]
     }
   ]

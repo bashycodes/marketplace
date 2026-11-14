@@ -32,10 +32,10 @@ If no watcher is running (no connection yet, or it lost the phone), the hook ref
 | Path | Purpose |
 |---|---|
 | `skills/android-wireless-debug/SKILL.md` | The workflow: connect → look → root-cause → fix → reinstall → look again |
-| `scripts/adb_connect.sh` | Connection cascade |
-| `scripts/stop_watch.sh` | Watches the phone's buttons for the stop gesture |
-| `scripts/stop_hook.sh` + `hooks/hooks.json` | PreToolUse hook: refuses the next phone command after a cancel, and phone commands while no watcher runs; SessionEnd cleanup |
-| `scripts/ui_find.sh` | Resolve a UI element to tap coordinates via uiautomator dump |
-| `references/ui-driving.md` | Driving the UI without eyeballing pixels |
-| `references/diagnostics.md` | Theme, insets, packaging and crash diagnostics from system state |
-| `references/wsl-and-usb.md` | WSL, USB-to-TCP, hotspot setups and closing the port afterwards |
+| `skills/android-wireless-debug/scripts/adb_connect.sh` | Connection cascade |
+| `skills/android-wireless-debug/scripts/stop_watch.sh` | Watches the phone's buttons for the stop gesture |
+| `skills/android-wireless-debug/scripts/stop_hook.sh` + `hooks/hooks.json` | PreToolUse hook: refuses the next phone command after a cancel, and phone commands while no watcher runs; SessionEnd cleanup |
+| `skills/android-wireless-debug/scripts/ui_find.sh` | Resolve a UI element to tap coordinates via uiautomator dump |
+| `skills/android-wireless-debug/references/ui-driving.md` | Driving the UI without eyeballing pixels |
+| `skills/android-wireless-debug/references/diagnostics.md` | Theme, insets, packaging and crash diagnostics from system state |
+| `skills/android-wireless-debug/references/wsl-and-usb.md` | WSL, USB-to-TCP, hotspot setups and closing the port afterwards |
