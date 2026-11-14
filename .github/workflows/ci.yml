@@ -19,3 +19,4 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: bash tests/android-wireless-debug/stop-gesture.test.sh
+      - run: bash -n plugins/bashy-plugins/skills/orchestrate/ci-wait.sh
