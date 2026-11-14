@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Tests for plugins/tmux-bells/scripts/notify-tmux.sh against a private tmux server
+# Tests for plugins/bashy-plugins/scripts/notify-tmux.sh against a private tmux server
 # (own socket; your real tmux sessions are never touched). Run: bash tests/tmux-bells/notify-tmux.test.sh
 # The badge mapping under test is the one the setup skill tells users to install.
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-SCRIPT=$ROOT/plugins/tmux-bells/scripts/notify-tmux.sh
-SKILL=$ROOT/plugins/tmux-bells/skills/setup/SKILL.md
+SCRIPT=$ROOT/plugins/bashy-plugins/scripts/notify-tmux.sh
+SKILL=$ROOT/plugins/bashy-plugins/skills/tmux-bells-setup/SKILL.md
 
 TMP=$(mktemp -d); SOCK=$TMP/tmux.sock
 t() { tmux -S "$SOCK" "$@"; }
@@ -44,6 +44,14 @@ CLEAR_KEY=$(sed -n 's/^bind a //p' "$SKILL")
 t select-window -t "$PANE"
 [ -n "$CLEAR_KEY" ] && t $CLEAR_KEY  # unquoted on purpose: split into tmux arguments
 check "clear key removes the badge" "" "$(state)"
+
+# Opt-in: without setup's @claude_badge, no badge and no bell.
+badge=$(t show -gv @claude_badge); t set -gu @claude_badge; run clear; t set -w -t "$PANE" monitor-bell on
+t kill-window -t "$PANE"; PANE=$(t new-window -d -P -F '#{pane_id}' -n hidden 'sleep 600')
+run alert stop; sleep 0.3
+check "before setup: no badge"              ""  "$(state)"
+check "before setup: no bell"               0   "$(t display -p -t "$PANE" '#{window_bell_flag}')"
+t set -g @claude_badge "$badge"
 
 out=$(echo '{}' | env -u TMUX bash "$SCRIPT" alert stop; echo "exit=$?")
 check "outside tmux: silent no-op" "exit=0" "$out"

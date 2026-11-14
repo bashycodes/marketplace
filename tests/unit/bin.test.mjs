@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-export const BIN = join(here, '..', '..', 'plugins', 'grill-over-ticktick', 'bin', 'tt-grill');
+export const BIN = join(here, '..', '..', 'plugins', 'bashy-plugins', 'bin', 'tt-grill');
 
 /** @param {string[]} args @param {{input?: string, env?: Record<string,string>}} [opts] */
 export function run(args, opts = {}) {

@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { readFileSync, statSync, mkdirSync, chmodSync, writeFileSync, symlinkSync, lstatSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpDir } from '../helpers/tmp.mjs';
-import { tokenPath, readToken, writeToken, promptHidden } from '../../plugins/grill-over-ticktick/lib/token.mjs';
+import { tokenPath, readToken, writeToken, promptHidden } from '../../plugins/bashy-plugins/lib/token.mjs';
 
 test('tokenPath', () => {
   assert.equal(tokenPath('/h'), '/h/.config/tt-grill/token');

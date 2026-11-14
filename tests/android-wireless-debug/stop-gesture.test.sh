@@ -5,11 +5,12 @@
 # No phone needed. Run: bash tests/android-wireless-debug/stop-gesture.test.sh
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-SCRIPTS=$ROOT/plugins/android-wireless-debug/skills/android-wireless-debug/scripts
+SCRIPTS=$ROOT/plugins/bashy-plugins/skills/android-wireless-debug/scripts
 FIX=$ROOT/tests/fixtures/android-wireless-debug
 
 TMP=$(mktemp -d)
-export AWD_STATE_DIR=$TMP/state FAKE_LOG=$TMP/adb.log
+export AWD_STATE_DIR=$TMP/state FAKE_LOG=$TMP/adb.log AWD_ENABLED_FILE=$TMP/enabled/flag
+mkdir -p "$TMP/enabled"; : > "$AWD_ENABLED_FILE"   # this machine has used the skill
 trap 'bash "$SCRIPTS/stop_watch.sh" stop >/dev/null 2>&1; rm -rf "$TMP"' EXIT
 
 # Fake adb, first on PATH. getevent -pl lists the S25's devices; getevent -lt
@@ -132,7 +133,7 @@ for c in './gradlew installDebug' './gradlew connectedDebugAndroidTest' 'scrcpy 
   check "cancel: $c refused"               deny "$(cancelled "$c")"
 done
 check "cancel: gradle build allowed"       allow "$(cancelled './gradlew assembleDebug')"
-check "cancel: plugin paths and names fine" allow "$(cancelled 'cat plugins/android-wireless-debug/README.md; git commit -m "android-wireless-debug 1.3.0"')"
+check "cancel: plugin paths and names fine" allow "$(cancelled 'cat plugins/bashy-plugins/docs/android-wireless-debug.md; git commit -m "android-wireless-debug 1.3.0"')"
 mkdir -p "$AWD_STATE_DIR"; printf 'reason=power\ntime=x\nepoch=%s\n' "$(date +%s)" > "$AWD_STATE_DIR/cancel"
 decision 'git status' >/dev/null
 check "a non-phone command keeps the cancel for the next phone one" deny "$(decision "$TAP")"
@@ -289,5 +290,13 @@ start; kill -9 "$(cat "$AWD_STATE_DIR/watcher.pid")"; settle 0.3   # SIGKILL: no
 check "SIGKILLed watcher: adb refused"      deny "$(decision "$TAP")"
 watch_ stop; settle 0.3
 check "stop leaves nothing running"         0    "$(pgrep -f "_run $AWD_STATE_DIR |$TMP/bin/adb" | wc -l | tr -d ' ')"
+
+# Opt-in: on a machine that never ran adb_connect.sh, a missing watcher refuses nothing.
+rm -rf "$AWD_STATE_DIR" "$TMP/enabled"
+check "never connected here: adb allowed"   allow "$(decision "$TAP")"
+check "never connected here: flutter allowed" allow "$(decision 'flutter run')"
+hook "bash $SCRIPTS/adb_connect.sh" >/dev/null
+check "running adb_connect.sh opts in"      yes  "$([ -f "$AWD_ENABLED_FILE" ] && echo yes)"
+check "opted in, no watcher: adb refused"   deny "$(decision "$TAP")"
 
 echo; [ $fails -eq 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }

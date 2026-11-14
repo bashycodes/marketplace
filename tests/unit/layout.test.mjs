@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fakeTickTick } from '../helpers/fake-ticktick.mjs';
-import { createApi } from '../../plugins/grill-over-ticktick/lib/api.mjs';
-import { createLogger } from '../../plugins/grill-over-ticktick/lib/log.mjs';
-import { readBlock, hostTitle } from '../../plugins/grill-over-ticktick/lib/state.mjs';
-import { findLayout, ensureLayout, ensureTag, listEfforts, archiveList, FOLDER, COLUMN, TAG } from '../../plugins/grill-over-ticktick/lib/layout.mjs';
+import { createApi } from '../../plugins/bashy-plugins/lib/api.mjs';
+import { createLogger } from '../../plugins/bashy-plugins/lib/log.mjs';
+import { readBlock, hostTitle } from '../../plugins/bashy-plugins/lib/state.mjs';
+import { findLayout, ensureLayout, ensureTag, listEfforts, archiveList, FOLDER, COLUMN, TAG } from '../../plugins/bashy-plugins/lib/layout.mjs';
 
 function setup() {
   const tt = fakeTickTick();

@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fakeClock } from '../helpers/fake-clock.mjs';
-import { createLogger } from '../../plugins/grill-over-ticktick/lib/log.mjs';
-import { parseDuration, fingerprint, wait, DEFAULTS } from '../../plugins/grill-over-ticktick/lib/wait.mjs';
+import { createLogger } from '../../plugins/bashy-plugins/lib/log.mjs';
+import { parseDuration, fingerprint, wait, DEFAULTS } from '../../plugins/bashy-plugins/lib/wait.mjs';
 
 const M = 60_000, S = 1000;
 const log = createLogger({ stderr: /** @type {any} */ ({ write() { return true; } }) });
@@ -88,7 +88,7 @@ test('max reached → gave up (4); zero questions never count as all', async () 
 });
 
 test('pull errors propagate (e.g. not found)', async () => {
-  const { notFound } = await import('../../plugins/grill-over-ticktick/lib/errors.mjs');
+  const { notFound } = await import('../../plugins/bashy-plugins/lib/errors.mjs');
   await assert.rejects(wait({ pull: async () => { throw notFound('gone'); }, owner: 'o_a', every: 1, settle: 1, grace: 1, max: 10, now: () => 0, sleep: async () => {}, log }), (/** @type {any} */ e) => e.exitCode === 6);
 });
 
@@ -126,7 +126,7 @@ test('result still carries the full pull output (older rounds included)', async 
 });
 
 test('transient exit-1 pull errors are retried (logged); 5 in a row abort with the original error', async () => {
-  const { apiError, authError } = await import('../../plugins/grill-over-ticktick/lib/errors.mjs');
+  const { apiError, authError } = await import('../../plugins/bashy-plugins/lib/errors.mjs');
   /** @type {string[]} */ const lines = [];
   const wlog = createLogger({ stderr: /** @type {any} */ ({ write(/** @type {string} */ s) { lines.push(s); return true; } }) });
   const open = R([['r1.1', 'a', 'none']]); const done = R([['r1.1', 'a2', 'tick']]);
