@@ -10,8 +10,8 @@ Acceptance (all must hold, measured): <numeric criteria from the ticket>
 Blocked-by context: <what merged work this builds on, if any>
 
 Setup: work in your own worktree on branch feat/<slug> off origin/<main>.
-Use your own build output dir (e.g. CARGO_TARGET_DIR=<per-worktree path>).
-Heavy builds: <the project's RAM / lock / nice wrapper>.
+Use your own build output dir (e.g. CARGO_TARGET_DIR, a Gradle build dir or dist/ under <per-worktree path>).
+Heavy builds: <the project's wrapper that waits for free RAM or a lock, if any>.
 
 Standards: <coding standards doc>. Tests + lint: <commands>; commit only green.
 Commit trailer: <project trailer>.
